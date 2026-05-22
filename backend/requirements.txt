@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+opencv-python
+aiortc
+av
+websockets
+pyserial

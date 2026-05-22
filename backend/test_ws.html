@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+
+<button onclick="move()">
+Move J1+
+</button>
+
+<pre id="output"></pre>
+
+<script>
+
+const ws=new WebSocket(
+"ws://127.0.0.1:8000/ws"
+)
+
+ws.onmessage=(event)=>{
+
+document.getElementById(
+"output"
+).innerText=event.data
+
+}
+
+function move(){
+
+ws.send(
+
+JSON.stringify({
+
+command:"joint",
+joint:1,
+direction:"+"
+
+})
+
+)
+
+}
+
+</script>
+
+</body>
+
+</html>
