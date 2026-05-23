@@ -56,6 +56,12 @@ class CameraManager:
         for idx in [0, 1, 2, 3]:
             cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
             if cap.isOpened():
+                # Set properties BEFORE reading any frames (DirectShow requirement)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
                 success, frame = cap.read()
                 if success and frame is not None:
                     available_cameras.append((idx, cap))
@@ -87,11 +93,6 @@ class CameraManager:
                 cap.release()
 
         self.camera = selected_cap
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self.camera.set(cv2.CAP_PROP_FPS, 30)
-        self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
         print(f"[OK] Camera connected on index {selected_idx}")
         self.connected = True
         return True
