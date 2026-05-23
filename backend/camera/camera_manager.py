@@ -54,7 +54,7 @@ class CameraManager:
         available_cameras = []
         # Quickly probe indices to see which ones are physically present and readable
         for idx in [0, 1, 2, 3]:
-            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(idx)
             if cap.isOpened():
                 # Set properties BEFORE reading any frames (DirectShow requirement)
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
