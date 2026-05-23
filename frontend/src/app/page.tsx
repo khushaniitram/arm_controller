@@ -92,6 +92,15 @@ export default function Home() {
     }
   }, [sendCommand]);
 
+  const emergencyStop = useCallback(() => {
+    if (jogIntervalRef.current) {
+      clearInterval(jogIntervalRef.current);
+      jogIntervalRef.current = null;
+    }
+    sendCommand({ command: "stop" });
+    activeMotionRef.current = null;
+  }, [sendCommand]);
+
   const startContinuousCommand = useCallback((motionKey: string, cmd: any) => {
     if (activeMotionRef.current === motionKey && jogIntervalRef.current) {
       return;
@@ -136,7 +145,7 @@ export default function Home() {
 
       if (e.code === "Space") {
         e.preventDefault();
-        stopRobot();
+        emergencyStop();
         return;
       }
 
@@ -171,7 +180,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [startJogCartesian, startJogJoint, stopRobot]);
+  }, [startJogCartesian, startJogJoint, stopRobot, emergencyStop]);
 
   // Joystick handling
   const handleJoystickMove = (x: number, y: number) => {
@@ -233,7 +242,7 @@ export default function Home() {
             </div>
 
             <button
-              onPointerDown={stopRobot}
+              onPointerDown={emergencyStop}
               className="bg-red-600 hover:bg-red-500 active:bg-red-700 active:scale-95 transition-all text-white font-bold text-xl py-6 rounded-xl shadow-lg shadow-red-900/50 uppercase tracking-widest border border-red-500"
             >
               Emergency Stop (Space)

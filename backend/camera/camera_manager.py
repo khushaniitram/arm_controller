@@ -51,41 +51,50 @@ class CameraManager:
         if not silent:
             print("\n[2/5] Initializing Camera...")
 
-        # Prefer external cameras, then fallback to built-in.
-        for idx in [1, 2, 3, 0]:
-            if not silent:
-                print(f"Trying camera index {idx}...")
-            # Use CAP_DSHOW to avoid noisy OpenCV backend probes on Windows.
-            self.camera = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-
-            if self.camera.isOpened():
-                self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                self.camera.set(cv2.CAP_PROP_FPS, 30)
-                self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-                success = False
-                for _ in range(5):
-                    success, frame = self.camera.read()
-                    if success and frame is not None:
-                        break
-                    time.sleep(0.1)
-
-                if success:
-                    print(f"[OK] Camera connected on index {idx}")
-                    self.connected = True
-                    return True
-
-                if not silent:
-                    print(f"[ERR] Camera {idx} opened but could not read frames.")
-                self.camera.release()
+        available_cameras = []
+        # Quickly probe indices to see which ones are physically present and readable
+        for idx in [0, 1, 2, 3]:
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                success, frame = cap.read()
+                if success and frame is not None:
+                    available_cameras.append((idx, cap))
+                else:
+                    cap.release()
             else:
-                if not silent:
-                    print(f"[ERR] Camera {idx} not found or failed to open.")
+                # Release cap if it failed to open
+                try:
+                    cap.release()
+                except:
+                    pass
 
-        if not silent:
-            print("[ERR] No working camera found.")
-        return False
+        if not available_cameras:
+            if not silent:
+                print("[ERR] No working camera found.")
+            return False
+
+        # Prefer external cameras (index >= 1), otherwise fall back to index 0 (built-in)
+        selected_idx, selected_cap = available_cameras[0]
+        for idx, cap in available_cameras:
+            if idx >= 1:
+                selected_idx = idx
+                selected_cap = cap
+                break
+
+        # Release any other cameras that were opened during probing
+        for idx, cap in available_cameras:
+            if idx != selected_idx:
+                cap.release()
+
+        self.camera = selected_cap
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.camera.set(cv2.CAP_PROP_FPS, 30)
+        self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        print(f"[OK] Camera connected on index {selected_idx}")
+        self.connected = True
+        return True
 
     def update(self):
         last_logged_connected = None
