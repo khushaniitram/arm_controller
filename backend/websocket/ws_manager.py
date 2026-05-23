@@ -1,89 +1,62 @@
-from fastapi import WebSocket
-from robot.robot_manager import robot
 import json
 
-class ConnectionManager:
+from fastapi import WebSocket
+from robot.robot_manager import robot
 
+
+class ConnectionManager:
     def __init__(self):
-        self.active_connections=[]
+        self.active_connections = []
 
     async def connect(self, websocket: WebSocket):
-
         await websocket.accept()
-
-        self.active_connections.append(
-            websocket
-        )
-
-        print(
-            "✓ WebSocket connected"
-        )
-
+        self.active_connections.append(websocket)
+        print("WebSocket connected")
 
     def disconnect(self, websocket):
-
-        self.active_connections.remove(
-            websocket
-        )
-
-        print(
-            "⚠ WebSocket disconnected"
-        )
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print("WebSocket disconnected")
 
 
-manager=ConnectionManager()
+manager = ConnectionManager()
 
 
-async def handle_websocket(
-    websocket: WebSocket
-):
+async def _handle_command(data):
+    command = data.get("command")
 
-    await manager.connect(
-        websocket
-    )
+    if command == "joint":
+        robot.jog_joint(int(data["joint"]), data["direction"])
+    elif command == "cartesian":
+        robot.jog_cartesian(str(data["axis"]), data["direction"])
+    elif command == "stop":
+        robot.stop()
+    elif command == "speed":
+        robot.set_speed(int(data["speed"]))
+    else:
+        raise ValueError(f"Unknown command: {command}")
+
+
+async def handle_websocket(websocket: WebSocket):
+    await manager.connect(websocket)
 
     try:
-
         while True:
-
-            data=await websocket.receive_text()
-
-            data=json.loads(data)
-
-            command=data.get(
-                "command"
-            )
-
-            if command=="joint":
-
-                robot.jog_joint(
-                    data["joint"],
-                    data["direction"]
+            raw_data = await websocket.receive_text()
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                await websocket.send_json(
+                    {"type": "error", "message": "Invalid JSON payload"}
                 )
+                continue
 
-            elif command=="cartesian":
+            try:
+                await _handle_command(data)
+                feedback = robot.read_feedback()
+                await websocket.send_json({"type": "feedback", "data": feedback})
+            except Exception as exc:
+                await websocket.send_json({"type": "error", "message": str(exc)})
 
-                robot.jog_cartesian(
-                    data["axis"],
-                    data["direction"]
-                )
-
-            elif command == "stop":
-                robot.stop()
-
-            elif command == "speed":
-                robot.set_speed(data["speed"])
-
-
-            feedback=robot.read_feedback()
-
-            await websocket.send_json({
-                "type":"feedback",
-                "data":feedback
-            })
-
-    except:
-
-        manager.disconnect(
-            websocket
-        )
+    except Exception:
+        manager.disconnect(websocket)

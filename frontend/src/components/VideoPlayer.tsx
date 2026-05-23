@@ -5,6 +5,20 @@ interface VideoPlayerProps {
   onStatsUpdate: (stats: { fps: number; latency: number }) => void;
 }
 
+const normalizeBackendHttpUrl = () => {
+  let raw = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").trim();
+  
+  // Automatically fix common typos like "https//domain.com"
+  if (raw.startsWith("https//")) {
+    raw = "https://" + raw.substring(7);
+  } else if (raw.startsWith("http//")) {
+    raw = "http://" + raw.substring(6);
+  }
+  
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  return withProtocol.replace(/\/+$/, "");
+};
+
 export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,8 +34,8 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "localhost:8000";
-        const response = await fetch(`http://${backendUrl}/offer`, {
+        const backendHttpUrl = normalizeBackendHttpUrl();
+        const response = await fetch(`${backendHttpUrl}/offer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

@@ -3,12 +3,21 @@ from robot.robot_manager import robot
 from fastapi import WebSocket
 from websocket.ws_manager import handle_websocket
 from camera.camera_manager import camera_manager
+from fastapi.middleware.cors import CORSMiddleware
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from pydantic import BaseModel
-import uuid
 import asyncio
+from config import ALLOWED_ORIGINS
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 
@@ -82,6 +91,7 @@ async def on_shutdown():
     coros = [pc.close() for pc in pcs]
     await asyncio.gather(*coros)
     pcs.clear()
+    robot.close()
 
 @app.post("/offer")
 async def offer(params: Offer):

@@ -7,6 +7,20 @@ import TelemetryPanel from "@/components/TelemetryPanel";
 import StatusIndicators from "@/components/StatusIndicators";
 import Joystick from "@/components/Joystick";
 
+const normalizeBackendHttpUrl = () => {
+  let raw = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").trim();
+  
+  // Automatically fix common typos like "https//domain.com"
+  if (raw.startsWith("https//")) {
+    raw = "https://" + raw.substring(7);
+  } else if (raw.startsWith("http//")) {
+    raw = "http://" + raw.substring(6);
+  }
+  
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  return withProtocol.replace(/\/+$/, "");
+};
+
 export default function Home() {
   const [wsStatus, setWsStatus] = useState("Disconnected");
   const [cameraStatus, setCameraStatus] = useState(false);
@@ -17,11 +31,16 @@ export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
   const jogIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeKeys = useRef<Set<string>>(new Set());
+  const activeMotionRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "localhost:8000";
+    const backendHttpUrl = normalizeBackendHttpUrl();
+    const backendWsUrl = backendHttpUrl.startsWith("https://")
+      ? backendHttpUrl.replace("https://", "wss://")
+      : backendHttpUrl.replace("http://", "ws://");
+
     const connectWs = () => {
-      const ws = new WebSocket(`ws://${backendUrl}/ws`);
+      const ws = new WebSocket(`${backendWsUrl}/ws`);
       
       ws.onopen = () => {
         setWsStatus("Connected");
@@ -40,6 +59,10 @@ export default function Home() {
       ws.onclose = () => {
         setWsStatus("Disconnected");
         setTimeout(connectWs, 2000); // Auto reconnect
+      };
+
+      ws.onerror = () => {
+        setWsStatus("Disconnected");
       };
 
       wsRef.current = ws;
@@ -63,22 +86,42 @@ export default function Home() {
       clearInterval(jogIntervalRef.current);
       jogIntervalRef.current = null;
     }
-    sendCommand({ command: "stop" });
+    if (activeMotionRef.current !== null) {
+      sendCommand({ command: "stop" });
+      activeMotionRef.current = null;
+    }
+  }, [sendCommand]);
+
+  const startContinuousCommand = useCallback((motionKey: string, cmd: any) => {
+    if (activeMotionRef.current === motionKey && jogIntervalRef.current) {
+      return;
+    }
+
+    if (jogIntervalRef.current) {
+      clearInterval(jogIntervalRef.current);
+      jogIntervalRef.current = null;
+    }
+
+    if (activeMotionRef.current !== null) {
+      sendCommand({ command: "stop" });
+    }
+
+    activeMotionRef.current = motionKey;
+    sendCommand(cmd);
+    jogIntervalRef.current = setInterval(() => sendCommand(cmd), 120);
   }, [sendCommand]);
 
   const startJogJoint = useCallback((joint: number, direction: string) => {
-    stopRobot();
+    const motionKey = `joint:${joint}:${direction}`;
     const cmd = { command: "joint", joint, direction };
-    sendCommand(cmd); // initial move
-    jogIntervalRef.current = setInterval(() => sendCommand(cmd), 50);
-  }, [sendCommand, stopRobot]);
+    startContinuousCommand(motionKey, cmd);
+  }, [startContinuousCommand]);
 
   const startJogCartesian = useCallback((axis: string, direction: string) => {
-    stopRobot();
+    const motionKey = `cartesian:${axis}:${direction}`;
     const cmd = { command: "cartesian", axis, direction };
-    sendCommand(cmd); // initial move
-    jogIntervalRef.current = setInterval(() => sendCommand(cmd), 50);
-  }, [sendCommand, stopRobot]);
+    startContinuousCommand(motionKey, cmd);
+  }, [startContinuousCommand]);
 
   const handleSpeedChange = (newSpeed: number) => {
     setSpeed(newSpeed);

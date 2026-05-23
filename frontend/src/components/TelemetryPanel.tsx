@@ -45,10 +45,27 @@ export default function TelemetryPanel({ position, speed, stats }: TelemetryPane
         <div>
           <h4 className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Network & Perf</h4>
           <div className="space-y-1">
+            <div className="flex justify-between"><span className="text-slate-400">Robot Link:</span> <span className="font-mono text-yellow-400">{position?.connected ? "Connected" : "Disconnected"}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400">Port:</span> <span className="font-mono text-yellow-400">{position?.port || "-"}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Speed:</span> <span className="font-mono text-yellow-400">{speed}%</span></div>
             <div className="flex justify-between"><span className="text-slate-400">FPS:</span> <span className="font-mono text-yellow-400">{Math.round(stats.fps)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Latency:</span> <span className="font-mono text-yellow-400">{Math.round(stats.latency)} ms</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Quality:</span> <span className="font-mono text-yellow-400">{getQuality(stats.latency)}</span></div>
+            {position?.error ? (
+              <div className="text-xs text-red-400 break-all pt-2 border-t border-slate-800 mt-2">
+                Serial error: {position.error}
+              </div>
+            ) : null}
+            {position?.motion_error ? (
+              <div className="text-xs text-amber-300 break-all pt-2 border-t border-slate-800 mt-2">
+                Motion status: {position.motion_error}
+              </div>
+            ) : null}
+            {position?.controller_message ? (
+              <div className="text-xs text-slate-400 break-all">
+                Controller: {position.controller_message}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
