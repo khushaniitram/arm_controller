@@ -28,9 +28,12 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let pc = new RTCPeerConnection();
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
     let statsInterval: NodeJS.Timeout;
     let renderer: THREE.WebGLRenderer | null = null;
+    let cancelled = false;
 
     const container = containerRef.current;
     const video = videoRef.current;
@@ -120,12 +123,36 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
     controls.maxDistance = 100;
 
     // 4. WebRTC setup
+    const waitForIceGatheringComplete = () => {
+      if (pc.iceGatheringState === "complete") return Promise.resolve();
+
+      return new Promise<void>((resolve) => {
+        const timeout = window.setTimeout(() => {
+          pc.removeEventListener("icegatheringstatechange", onStateChange);
+          resolve();
+        }, 3000);
+
+        const onStateChange = () => {
+          if (pc.iceGatheringState === "complete") {
+            window.clearTimeout(timeout);
+            pc.removeEventListener("icegatheringstatechange", onStateChange);
+            resolve();
+          }
+        };
+
+        pc.addEventListener("icegatheringstatechange", onStateChange);
+      });
+    };
+
     const startWebRTC = async () => {
       try {
         pc.addTransceiver("video", { direction: "recvonly" });
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        await waitForIceGatheringComplete();
+
+        if (cancelled) return;
 
         const backendHttpUrl = normalizeBackendHttpUrl();
         const response = await fetch(`${backendHttpUrl}/offer`, {
@@ -137,7 +164,10 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
           }),
         });
 
-        if (!response.ok) throw new Error("Failed to connect to video stream");
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(detail || "Failed to connect to video stream");
+        }
 
         const answer = await response.json();
         await pc.setRemoteDescription(answer);
@@ -159,11 +189,11 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
             });
             
             onStatsUpdate({ fps: currentFps, latency: currentLatency });
-          } catch (e) {}
+          } catch {}
         }, 1000);
 
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to connect to video stream");
         streamStatusCallback(false);
       }
     };
@@ -171,13 +201,23 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
     pc.ontrack = (event) => {
       if (video) {
         video.srcObject = event.streams[0];
-        video.play().catch((e) => console.log("Video playback delayed", e));
-        streamStatusCallback(true);
+        video.onplaying = () => streamStatusCallback(true);
+        video.play().catch((e) => {
+          console.log("Video playback delayed", e);
+          setError("Click the video panel if autoplay is blocked by the browser.");
+        });
       }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        streamStatusCallback(false);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+        setError(`WebRTC ICE ${pc.iceConnectionState}. Check backend /camera/status and network/firewall settings.`);
         streamStatusCallback(false);
       }
     };
@@ -203,6 +243,7 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
 
     // 7. Cleanup on unmount
     return () => {
+      cancelled = true;
       window.removeEventListener("resize", handleResize);
       if (statsInterval) clearInterval(statsInterval);
       
@@ -226,7 +267,7 @@ export default function VideoPlayer({ streamStatusCallback, onStatsUpdate }: Vid
       material.dispose();
       texture.dispose();
     };
-  }, []);
+  }, [onStatsUpdate, streamStatusCallback]);
 
   return (
     <div className="relative w-full aspect-video bg-zinc-950 rounded-xl overflow-hidden border border-zinc-200 shadow-md">

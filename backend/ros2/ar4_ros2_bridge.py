@@ -45,6 +45,7 @@ class AR4Ros2Bridge(Node):
         self.ws = None
         self.loop = None
         self.current_joints = [0.0] * 6 # in degrees
+        self.have_feedback = False
 
         # JointState Publisher (Standard for robot_state_publisher and MoveIt 2)
         self.joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
@@ -79,6 +80,10 @@ class AR4Ros2Bridge(Node):
     def trajectory_callback(self, msg: JointTrajectory):
         if not self.connected or not self.ws or not self.loop:
             self.get_logger().warn("Cannot command robot: WebSocket not connected.")
+            return
+
+        if not self.have_feedback:
+            self.get_logger().warn("Cannot command robot: waiting for initial joint feedback.")
             return
 
         if not msg.points:
@@ -133,8 +138,16 @@ async def receive_websocket(node, ws_url):
                 async for message in ws:
                     try:
                         data = json.loads(message)
-                        if "position" in data:
+                        if data.get("type") == "feedback":
+                            pos = data.get("data", {})
+                        elif "position" in data:
                             pos = data["position"]
+                        else:
+                            pos = None
+
+                        if pos:
+                            if pos.get("feedback_ready") is False and pos.get("mode") != "Simulation Mode":
+                                continue
                             node.current_joints = [
                                 pos.get("j1", 0.0),
                                 pos.get("j2", 0.0),
@@ -143,6 +156,7 @@ async def receive_websocket(node, ws_url):
                                 pos.get("j5", 0.0),
                                 pos.get("j6", 0.0)
                             ]
+                            node.have_feedback = True
                             node.publish_joint_states()
                     except Exception as e:
                         node.get_logger().error(f"Error parsing message: {e}")

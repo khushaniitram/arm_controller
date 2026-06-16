@@ -10,6 +10,7 @@ export default function StatusIndicators({ wsStatus, cameraStatus, robotState }:
   const isWsConnected = wsStatus === 'Connected';
   const isCameraReady = cameraStatus;
   const isSim = robotState === 'Simulation Mode';
+  const isWaiting = robotState.includes('Waiting');
   const isRobotConnected = robotState.includes('Connected') || isSim;
 
   return (
@@ -24,8 +25,8 @@ export default function StatusIndicators({ wsStatus, cameraStatus, robotState }:
         Cam: {isCameraReady ? 'Ready' : 'Offline'}
       </div>
 
-      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${isSim ? 'text-amber-700 bg-amber-50/60 border-amber-200/80' : (isRobotConnected ? 'text-emerald-700 bg-emerald-50/60 border-emerald-200/80' : 'text-rose-700 bg-rose-50/60 border-rose-200/80')}`}>
-        <span className={`w-2 h-2 rounded-full ${isSim ? 'bg-amber-500' : (isRobotConnected ? 'bg-emerald-500' : 'bg-rose-500')}`} />
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${isSim || isWaiting ? 'text-amber-700 bg-amber-50/60 border-amber-200/80' : (isRobotConnected ? 'text-emerald-700 bg-emerald-50/60 border-emerald-200/80' : 'text-rose-700 bg-rose-50/60 border-rose-200/80')}`}>
+        <span className={`w-2 h-2 rounded-full ${isSim || isWaiting ? 'bg-amber-500' : (isRobotConnected ? 'bg-emerald-500' : 'bg-rose-500')}`} />
         {robotState}
       </div>
     </div>

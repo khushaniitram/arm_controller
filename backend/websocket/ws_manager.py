@@ -102,4 +102,8 @@ async def handle_websocket(websocket: WebSocket):
     except Exception:
         manager.disconnect(websocket)
     finally:
+        try:
+            robot.stop()
+        except Exception:
+            pass
         broadcaster_task.cancel()

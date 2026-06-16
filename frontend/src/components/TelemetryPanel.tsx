@@ -1,13 +1,18 @@
 import React from "react";
+import type { RobotTelemetry } from "@/types/telemetry";
 
 interface TelemetryPanelProps {
-  position: any;
+  position: RobotTelemetry;
   speed: number;
   stats: { fps: number; latency: number; controlLatency: number };
 }
 
 export default function TelemetryPanel({ position, speed, stats }: TelemetryPanelProps) {
-  const formatVal = (val: any) => (typeof val === 'number' ? val.toFixed(2) : '0.00');
+  const hasRealFeedback = position?.mode === "Simulation Mode" || position?.feedback_ready !== false;
+  const formatVal = (val: number | undefined) => {
+    if (!hasRealFeedback) return "--";
+    return typeof val === 'number' ? val.toFixed(2) : '0.00';
+  };
 
   const getQuality = (latency: number) => {
     if (latency === 0) return "Unknown";
@@ -46,6 +51,10 @@ export default function TelemetryPanel({ position, speed, stats }: TelemetryPane
           <h4 className="text-xs text-zinc-400 mb-2.5 uppercase tracking-wider font-bold">Network & Perf</h4>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between items-center"><span className="text-zinc-500">Robot Link:</span> <span className={`font-semibold text-xs px-2 py-0.5 rounded border ${position?.connected ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>{position?.connected ? "Connected" : "Disconnected"}</span></div>
+            <div className="flex justify-between items-center"><span className="text-zinc-500">Pose Source:</span> <span className={`font-semibold text-xs px-2 py-0.5 rounded border ${hasRealFeedback ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`}>{hasRealFeedback ? (position?.position_source || "controller") : "Waiting"}</span></div>
+            {position?.feedback_age_ms !== undefined && position?.feedback_age_ms !== null && (
+              <div className="flex justify-between items-center"><span className="text-zinc-500">Pose Age:</span> <span className="font-mono text-zinc-950 font-semibold">{position.feedback_age_ms} ms</span></div>
+            )}
             <div className="flex justify-between items-center"><span className="text-zinc-500">Port:</span> <span className="font-mono text-zinc-950 font-semibold">{position?.port || "-"}</span></div>
             <div className="flex justify-between items-center"><span className="text-zinc-500">Speed:</span> <span className="font-mono text-zinc-950 font-semibold">{speed}%</span></div>
             <div className="flex justify-between items-center"><span className="text-zinc-500">FPS:</span> <span className="font-mono text-zinc-950 font-semibold">{Math.round(stats.fps)}</span></div>

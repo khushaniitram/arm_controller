@@ -1,8 +1,38 @@
 rcm_controller_node:
   ros__parameters:
+    base_frame: world
+    planning_group: arm
+    ee_link: link_6
+
+    # Surgical entry point in the base/world frame, meters.
     rcm_x: 0.35
     rcm_y: 0.0
     rcm_z: 0.35
-    max_rcm_error: 0.0015
+
+    # Shaft axis in the end-effector frame. AR4 tool shafts are commonly mounted
+    # along flange +Z; change this if your URDF tool frame differs.
+    tool_axis: [0.0, 0.0, 1.0]
+
+    # Distance from flange to physical tool tip, meters.
+    tool_tip_offset: 0.20
+
+    # Insertion is measured from RCM to tool tip, meters.
+    initial_insertion_depth: 0.10
+    min_insertion_depth: 0.02
+    max_insertion_depth: 0.24
+
+    # Safety and servo parameters.
+    max_rcm_error: 0.001
     control_rate: 100.0
-    kp_rcm: 5.0
+    kp_rcm: 8.0
+    damping: 0.001
+    max_joint_velocity: 0.7
+    max_pitch_rate: 0.35
+    max_yaw_rate: 0.35
+    max_roll_rate: 0.8
+    max_insertion_rate: 0.03
+    command_timeout: 0.25
+
+    joint_state_topic: /joint_states
+    command_topic: /rcm/cmd_vel
+    trajectory_topic: /joint_trajectory

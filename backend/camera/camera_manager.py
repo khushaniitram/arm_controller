@@ -43,6 +43,9 @@ class CameraManager:
         self.connected = False
         self.relay = MediaRelay()
         self.track = None
+        self.selected_index = None
+        self.last_frame_at = None
+        self.last_error = None
 
         thread = threading.Thread(target=self.update, daemon=True)
         thread.start()
@@ -68,6 +71,8 @@ class CameraManager:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 
                 self.camera = cap
+                self.selected_index = CAMERA_INDEX
+                self.last_error = None
                 print(f"[OK] Camera connected on forced index {CAMERA_INDEX}")
                 self.connected = True
                 return True
@@ -78,6 +83,7 @@ class CameraManager:
                     pass
                 if not silent:
                     print(f"[ERR] Failed to open forced camera index {CAMERA_INDEX}")
+                self.last_error = f"Failed to open forced camera index {CAMERA_INDEX}"
                 return False
 
         # Otherwise, run auto-detection probing
@@ -104,6 +110,7 @@ class CameraManager:
         if not available_cameras:
             if not silent:
                 print("[ERR] No working camera found.")
+            self.last_error = "No working camera found"
             return False
 
         # Prefer external cameras (index >= 1), otherwise fall back to index 0 (built-in)
@@ -120,6 +127,8 @@ class CameraManager:
                 cap.release()
 
         self.camera = selected_cap
+        self.selected_index = selected_idx
+        self.last_error = None
         print(f"[OK] Camera connected on index {selected_idx}")
         self.connected = True
         return True
@@ -131,6 +140,7 @@ class CameraManager:
                 if self.connected:
                     print("[WARN] Camera disconnected")
                 self.connected = False
+                self.selected_index = None
 
                 # If we previously logged connected (or haven't logged yet), print disconnected once.
                 if last_logged_connected is not False:
@@ -147,17 +157,33 @@ class CameraManager:
             success, frame = self.camera.read()
             if success:
                 self.frame = frame
+                self.last_frame_at = time.time()
             else:
                 if last_logged_connected is not False:
                     print("[WARN] Could not grab frame. Reinitializing...")
                     last_logged_connected = False
                 self.camera.release()
                 self.connected = False
+                self.selected_index = None
                 self.frame = None
+                self.last_error = "Could not grab frame"
                 time.sleep(1)
 
     def get_frame(self):
         return self.frame
+
+    def get_status(self):
+        return {
+            "connected": self.connected,
+            "camera_index": self.selected_index,
+            "has_frame": self.frame is not None,
+            "last_frame_age_ms": (
+                round((time.time() - self.last_frame_at) * 1000.0)
+                if self.last_frame_at
+                else None
+            ),
+            "error": self.last_error,
+        }
 
 
 camera_manager = CameraManager()

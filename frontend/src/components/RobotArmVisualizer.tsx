@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { RobotTelemetry } from "@/types/telemetry";
 
 interface RobotArmVisualizerProps {
-  position: any;
+  position: RobotTelemetry;
 }
 
 export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps) {
@@ -46,6 +47,7 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
   // Update target angles when position props change
   useEffect(() => {
     if (!position) return;
+    if (position.feedback_ready === false && position.mode !== "Simulation Mode") return;
     targetAngles.current = {
       j1: THREE.MathUtils.degToRad(Number(position.j1 || 0)),
       j2: THREE.MathUtils.degToRad(Number(position.j2 || 0)),
@@ -290,8 +292,8 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
 
       {/* Overlay status HUD */}
       <div className="absolute top-4 left-4 pointer-events-none bg-white/95 backdrop-blur-sm border border-zinc-200/80 rounded-lg p-2 px-3 text-xs text-zinc-800 font-semibold flex items-center gap-2 z-10 shadow-sm">
-        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-        <span>3D Digital Twin Active</span>
+        <span className={`w-2 h-2 rounded-full ${position?.feedback_ready === false && position?.mode !== "Simulation Mode" ? "bg-amber-500" : "bg-blue-500 animate-pulse"}`} />
+        <span>{position?.feedback_ready === false && position?.mode !== "Simulation Mode" ? "Waiting for Real Joint Feedback" : "3D Digital Twin Active"}</span>
       </div>
 
       <div className="absolute top-4 right-4 pointer-events-none bg-white/95 backdrop-blur-sm border border-zinc-200/80 rounded-lg p-2 px-3 text-xs text-zinc-600 font-semibold z-10 shadow-sm">

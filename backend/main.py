@@ -31,6 +31,10 @@ async def home():
 async def position():
     return robot.read_feedback()
 
+@app.get("/camera/status")
+async def camera_status():
+    return camera_manager.get_status()
+
 @app.post("/joint/{joint}/{direction}")
 async def joint(
     joint:int,

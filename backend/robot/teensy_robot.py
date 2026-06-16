@@ -48,6 +48,8 @@ class TeensyRobot(BaseRobot):
 
         self.serial = None
         self.connected_port = None
+        self.feedback_ready = False
+        self.last_feedback_at = None
         self.mode = "Hardware Disconnected"
         self.last_error = None
         self.last_controller_message = None
@@ -60,6 +62,11 @@ class TeensyRobot(BaseRobot):
         self._last_motion_command_at = 0.0
         self._waiting_for_ack = False
         self._last_motion_sent_at = 0.0
+        self._last_feedback_request_at = 0.0
+        self._feedback_request_interval = 0.5
+        self._last_jog_heartbeat_at = None
+        self._continuous_motion_active = False
+        self._jog_deadman_timeout = 0.75
 
         self.thread = None
 
@@ -69,6 +76,7 @@ class TeensyRobot(BaseRobot):
             self._connect(force=True)
             self.thread = threading.Thread(target=self._read_loop, daemon=True)
             self.thread.start()
+            self.request_feedback()
 
     @staticmethod
     def _list_ports():
@@ -176,6 +184,8 @@ class TeensyRobot(BaseRobot):
                 self.connected_port = candidate
                 self.mode = "Hardware Connected"
                 self.last_error = None
+                self.feedback_ready = False
+                self.last_feedback_at = None
                 print(f"[ROBOT] connected successfully on {candidate}")
                 self._last_logged_connected = True
                 
@@ -212,6 +222,10 @@ class TeensyRobot(BaseRobot):
     def _is_motion_command(cmd):
         return cmd.startswith("LJV") or cmd.startswith("LCV")
 
+    def request_feedback(self):
+        self._last_feedback_request_at = time.time()
+        self._send_command("SS")
+
     def _send_command(self, cmd):
         if not self._ensure_connected():
             print(f"Command skipped (serial disconnected): {cmd}")
@@ -219,6 +233,15 @@ class TeensyRobot(BaseRobot):
 
         now = time.time()
         if self._is_motion_command(cmd):
+            if not self.feedback_ready:
+                self.last_motion_error = "Waiting for initial robot position feedback"
+                self.request_feedback()
+                print(f"Command skipped (waiting for initial position): {cmd}")
+                return False
+
+            self._last_jog_heartbeat_at = now
+            self._continuous_motion_active = True
+
             # If we are waiting for an ACK and it hasn't timed out (1.0 sec), skip the command
             if self._waiting_for_ack and (now - self._last_motion_sent_at) < 1.0:
                 return False
@@ -231,6 +254,8 @@ class TeensyRobot(BaseRobot):
         elif cmd == "SS":
             # Stop command immediately clears the waiting state and goes through
             self._waiting_for_ack = False
+            self._continuous_motion_active = False
+            self._last_jog_heartbeat_at = None
 
         try:
             payload = f"{cmd}\n".encode("utf-8")
@@ -250,7 +275,13 @@ class TeensyRobot(BaseRobot):
         import re
         pattern = re.compile(r"([A-M])(-?\d+\.?\d*)")
         matches = pattern.findall(line)
+        if not matches:
+            return False
+
         parsed = {k: float(v) for k, v in matches}
+        has_position = any(key in parsed for key in ("A", "B", "C", "D", "E", "F", "G", "H", "I"))
+        if not has_position:
+            return False
         
         # Only update if we are not actively tracking/simulating needle lock,
         # to avoid conflicts between local kinematics calculations and raw serial reports.
@@ -265,6 +296,10 @@ class TeensyRobot(BaseRobot):
             if "H" in parsed: self.position["y"] = parsed["H"]
             if "I" in parsed: self.position["z"] = parsed["I"]
 
+        self.feedback_ready = True
+        self.last_feedback_at = time.time()
+        return True
+
     def _read_loop(self):
         while self.running:
             if not self._ensure_connected():
@@ -272,20 +307,34 @@ class TeensyRobot(BaseRobot):
                 continue
 
             try:
+                if (
+                    self._continuous_motion_active
+                    and self._last_jog_heartbeat_at is not None
+                    and (time.time() - self._last_jog_heartbeat_at) > self._jog_deadman_timeout
+                ):
+                    print("[ROBOT] jog deadman timeout. Sending stop.")
+                    self._send_command("SS")
+
+                if not self.feedback_ready and (
+                    time.time() - self._last_feedback_request_at
+                ) >= self._feedback_request_interval:
+                    self._last_feedback_request_at = time.time()
+                    self.request_feedback()
+
                 if self.serial.in_waiting > 0:
                     line = self.serial.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self.last_controller_message = line
+                        parsed_feedback = self._parse_feedback(line)
                         if line.startswith("EL"):
                             self.last_motion_error = f"Motion limit reached: {line}"
                             self._waiting_for_ack = False
                         elif line.startswith("ER"):
                             self.last_motion_error = f"Controller rejected motion command: {line}"
                             self._waiting_for_ack = False
-                        elif line.startswith("A"):
+                        elif parsed_feedback:
                             self.last_motion_error = None
                             self._waiting_for_ack = False
-                            self._parse_feedback(line)
                         print(f"[ROBOT] <- {line}")
             except Exception as exc:
                 self._mark_disconnected(str(exc))
@@ -300,9 +349,7 @@ class TeensyRobot(BaseRobot):
 
         move_dir = "1" if direction == "+" else "0"
         cmd = f"LJV{joint}{move_dir}Sp{self.speed}Ac15Dc99Rm80WLm000000"
-        if self._send_command(cmd):
-            amount = 1 if direction == "+" else -1
-            self.position[f"j{joint}"] += amount
+        self._send_command(cmd)
 
     def jog_cartesian(self, axis, direction):
         if direction not in {"+", "-"}:
@@ -315,11 +362,7 @@ class TeensyRobot(BaseRobot):
         axis_number = self.AXIS_MAP[axis_upper]
         move_dir = "1" if direction == "+" else "0"
         cmd = f"LCV{axis_number}{move_dir}Sp{self.speed}Ac15Dc99Rm80WFLm000000"
-        if self._send_command(cmd):
-            amount = 1 if direction == "+" else -1
-            axis_key = axis_upper.lower()
-            if axis_key in self.position:
-                self.position[axis_key] += amount
+        self._send_command(cmd)
 
     def stop(self):
         self.cancel_move_to()
@@ -335,13 +378,24 @@ class TeensyRobot(BaseRobot):
 
     def read_feedback(self):
         feedback = self.position.copy()
-        feedback["mode"] = self.mode
+        feedback["mode"] = (
+            "Waiting for Initial Feedback"
+            if self.connected_port and not self.feedback_ready
+            else self.mode
+        )
         feedback["speed"] = self.speed
         feedback["connected"] = bool(self.serial and self.serial.is_open)
         feedback["port"] = self.connected_port
         feedback["error"] = self.last_error
         feedback["controller_message"] = self.last_controller_message
         feedback["motion_error"] = self.last_motion_error
+        feedback["feedback_ready"] = self.feedback_ready
+        feedback["feedback_age_ms"] = (
+            round((time.time() - self.last_feedback_at) * 1000.0)
+            if self.last_feedback_at
+            else None
+        )
+        feedback["position_source"] = "controller" if self.feedback_ready else "uninitialized"
         feedback["moving_to_coords"] = self.is_moving_to_coords()
         return feedback
 

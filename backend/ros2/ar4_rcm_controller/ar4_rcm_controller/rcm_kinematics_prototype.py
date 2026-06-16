@@ -1,209 +1,222 @@
-import numpy as np
+#!/usr/bin/env python3
+"""Standalone AR4 RCM kinematics prototype.
+
+This file mirrors the C++ controller math without requiring ROS 2. It is useful
+for quick numerical checks before deploying the MoveIt-backed node.
+"""
+
+import math
 import time
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass
+class ToolCommand:
+    pitch_rate: float = 0.0
+    yaw_rate: float = 0.0
+    roll_rate: float = 0.0
+    insertion_rate: float = 0.0
+
 
 class AR4RcmPrototype:
-    def __init__(self, rcm_point=None):
-        # DH parameters for AR4 (a, alpha, d, theta_offset)
-        # a is in meters, d is in meters
+    def __init__(self, rcm_point=None, tool_tip_offset=0.20):
         self.dh_params = [
-            (0.0642, -np.pi/2, 0.16977, 0.0),      # Joint 1
-            (0.305,   0.0,     0.0,     -np.pi/2), # Joint 2
-            (0.0,     -np.pi/2, 0.0,     0.0),      # Joint 3
-            (0.0,     np.pi/2,  0.22263, 0.0),      # Joint 4
-            (0.0,     -np.pi/2, 0.0,     0.0),      # Joint 5
-            (0.0,     0.0,      0.03625, 0.0)       # Joint 6 (flange)
+            (0.0642, -math.pi / 2, 0.16977, 0.0),
+            (0.305, 0.0, 0.0, -math.pi / 2),
+            (0.0, -math.pi / 2, 0.0, 0.0),
+            (0.0, math.pi / 2, 0.22263, 0.0),
+            (0.0, -math.pi / 2, 0.0, 0.0),
+            (0.0, 0.0, 0.03625, 0.0),
         ]
-        
-        # Tool offset vector relative to the flange (Link 6 frame)
-        # Shaft axis is along the Z axis of Link 6
-        self.tool_offset_local = np.array([0.0, 0.0, 1.0]) # unit tool vector
+        self.tool_axis_local = np.array([0.0, 0.0, 1.0])
+        self.rcm_point = np.array(rcm_point if rcm_point is not None else [0.35, 0.0, 0.35], dtype=float)
+        self.tool_tip_offset = float(tool_tip_offset)
 
-        # Fixed RCM point in base frame
-        if rcm_point is None:
-            self.rcm_point = np.array([0.35, 0.0, 0.35])
-        else:
-            self.rcm_point = np.array(rcm_point)
+    @staticmethod
+    def skew(vector):
+        return np.array(
+            [
+                [0.0, -vector[2], vector[1]],
+                [vector[2], 0.0, -vector[0]],
+                [-vector[1], vector[0], 0.0],
+            ]
+        )
 
-    def dh_matrix(self, theta, a, alpha, d, theta_offset):
-        th = theta + theta_offset
-        ct = np.cos(th)
-        st = np.sin(th)
-        ca = np.cos(alpha)
-        sa = np.sin(alpha)
-        
-        return np.array([
-            [ct, -st*ca,  st*sa, a*ct],
-            [st,  ct*ca, -ct*sa, a*st],
-            [0,   sa,     ca,    d],
-            [0,   0,      0,     1]
-        ])
+    @staticmethod
+    def damped_pinv(matrix, damping=1e-3):
+        u, singular_values, vt = np.linalg.svd(matrix, full_matrices=False)
+        inverted = singular_values / (singular_values**2 + damping**2)
+        return vt.T @ np.diag(inverted) @ u.T
+
+    @staticmethod
+    def dh_matrix(theta, a, alpha, d, theta_offset):
+        theta = theta + theta_offset
+        ct, st = math.cos(theta), math.sin(theta)
+        ca, sa = math.cos(alpha), math.sin(alpha)
+        return np.array(
+            [
+                [ct, -st * ca, st * sa, a * ct],
+                [st, ct * ca, -ct * sa, a * st],
+                [0.0, sa, ca, d],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
+
+    @staticmethod
+    def pose_from_direction_roll(position, direction, roll_angle):
+        z_axis = direction / np.linalg.norm(direction)
+        reference = np.array([0.0, 0.0, 1.0])
+        if abs(float(z_axis @ reference)) > 0.95:
+            reference = np.array([1.0, 0.0, 0.0])
+
+        x_axis = np.cross(reference, z_axis)
+        x_axis /= np.linalg.norm(x_axis)
+        y_axis = np.cross(z_axis, x_axis)
+        y_axis /= np.linalg.norm(y_axis)
+
+        k = z_axis
+        kx = AR4RcmPrototype.skew(k)
+        roll_matrix = np.eye(3) + math.sin(roll_angle) * kx + (1.0 - math.cos(roll_angle)) * (kx @ kx)
+        rotation = np.column_stack((roll_matrix @ x_axis, roll_matrix @ y_axis, z_axis))
+
+        transform = np.eye(4)
+        transform[:3, :3] = rotation
+        transform[:3, 3] = position
+        return transform
 
     def forward_kinematics(self, joints):
-        """
-        Computes forward kinematics for the given joint angles (in radians).
-        Returns:
-            T_ee: 4x4 transform matrix of the flange
-            X_ee: 3D position of the flange
-            R_ee: 3x3 rotation matrix of the flange
-            u_tool: 3D unit tool direction vector in base frame
-        """
-        T = np.eye(4)
-        for i, q in enumerate(joints):
-            a, alpha, d, theta_offset = self.dh_params[i]
-            T_i = self.dh_matrix(q, a, alpha, d, theta_offset)
-            T = T @ T_i
-            
-        X_ee = T[:3, 3]
-        R_ee = T[:3, :3]
-        u_tool = R_ee @ self.tool_offset_local
-        # Ensure it is a unit vector
-        u_tool = u_tool / np.linalg.norm(u_tool)
-        
-        return T, X_ee, R_ee, u_tool
+        transform = np.eye(4)
+        transforms = [transform.copy()]
+        for joint, params in zip(joints, self.dh_params):
+            transform = transform @ self.dh_matrix(joint, *params)
+            transforms.append(transform.copy())
 
-    def get_geometric_jacobian(self, joints):
-        """
-        Computes the 6x6 geometric Jacobian at the flange.
-        """
-        T = np.eye(4)
-        T_frames = [T.copy()]
-        
-        # Compute forward transforms for all intermediate frames
-        for i, q in enumerate(joints):
-            a, alpha, d, theta_offset = self.dh_params[i]
-            T_i = self.dh_matrix(q, a, alpha, d, theta_offset)
-            T = T @ T_i
-            T_frames.append(T.copy())
-            
-        X_ee = T_frames[-1][:3, 3]
-        J = np.zeros((6, 6))
-        
-        for i in range(6):
-            z_i = T_frames[i][:3, 2] # Joint rotation axis (Z axis of previous frame)
-            o_i = T_frames[i][:3, 3] # Joint origin position
-            
-            # Position Jacobian column: z_i x (X_ee - o_i)
-            J[:3, i] = np.cross(z_i, X_ee - o_i)
-            # Rotation Jacobian column: z_i
-            J[3:, i] = z_i
-            
-        return J
+        flange_position = transform[:3, 3]
+        flange_rotation = transform[:3, :3]
+        tool_direction = flange_rotation @ self.tool_axis_local
+        tool_direction /= np.linalg.norm(tool_direction)
+        return transform, transforms, flange_position, flange_rotation, tool_direction
 
-    def compute_rcm_error(self, X_ee, u_tool):
-        """
-        Computes perpendicular error vector from shaft line to RCM point.
-        """
-        X_ee_to_rcm = self.rcm_point - X_ee
-        d = np.dot(X_ee_to_rcm, u_tool)
-        perp_vec = X_ee_to_rcm - d * u_tool
-        return perp_vec
+    def geometric_jacobian(self, joints):
+        _, transforms, flange_position, _, _ = self.forward_kinematics(joints)
+        jacobian = np.zeros((6, 6))
 
-    def compute_rcm_jacobian(self, joints, X_ee, u_tool):
-        """
-        Computes the analytical 3x6 RCM constraint Jacobian.
-        """
-        J_geo = self.get_geometric_jacobian(joints)
-        J_pos = J_geo[:3, :]
-        J_rot = J_geo[3:, :]
-        
-        d = np.dot(self.rcm_point - X_ee, u_tool)
-        
-        # Projection matrix perpendicular to tool shaft axis
-        P_perp = np.eye(3) - np.outer(u_tool, u_tool)
-        
-        # Skew-symmetric cross product matrix of u_tool
-        u_skew = np.array([
-            [0.0, -u_tool[2], u_tool[1]],
-            [u_tool[2], 0.0, -u_tool[0]],
-            [-u_tool[1], u_tool[0], 0.0]
-        ])
-        
-        J_rcm = P_perp @ J_pos - d * u_skew @ J_rot
-        return J_rcm
+        for index in range(6):
+            axis = transforms[index][:3, 2]
+            origin = transforms[index][:3, 3]
+            jacobian[:3, index] = np.cross(axis, flange_position - origin)
+            jacobian[3:, index] = axis
 
-    def damped_pinv(self, M, damping=1e-3):
-        U, S, Vt = np.linalg.svd(M, full_matrices=False)
-        S_inv = S / (S**2 + damping**2)
-        return Vt.T @ np.diag(S_inv) @ U.T
+        return jacobian
 
-    def solve_rcm_step(self, joints, desired_tip_vel, roll_vel=0.0, insertion_vel=0.0, kp_rcm=5.0):
-        """
-        Solves for joint velocities using null-space task prioritization.
-        """
-        T_ee, X_ee, R_ee, u_tool = self.forward_kinematics(joints)
-        
-        # 1. Primary Task: Correct RCM Position
-        rcm_err = self.compute_rcm_error(X_ee, u_tool)
-        J_rcm = self.compute_rcm_jacobian(joints, X_ee, u_tool)
-        
-        # RCM correction command
-        v_rcm = kp_rcm * rcm_err
-        
-        # Damped Pseudoinverse of RCM Jacobian
-        J_rcm_pinv = self.damped_pinv(J_rcm, damping=1e-3)
-        q_dot_rcm = J_rcm_pinv @ v_rcm
-        
-        # Null-space projection matrix
-        P_null = np.eye(6) - J_rcm_pinv @ J_rcm
-        
-        # 2. Secondary Task: Tool tip trajectory
-        J_geo = self.get_geometric_jacobian(joints)
-        J_pos = J_geo[:3, :]
-        J_rot = J_geo[3:, :]
-        
-        d = np.dot(self.rcm_point - X_ee, u_tool)
-        
-        # Tool tip Jacobian
-        u_skew = np.array([
-            [0.0, -u_tool[2], u_tool[1]],
-            [u_tool[2], 0.0, -u_tool[0]],
-            [-u_tool[1], u_tool[0], 0.0]
-        ])
-        J_tip = J_pos - d * u_skew @ J_rot
-        
-        # Project task Jacobian into null space
-        J_task_proj = J_tip @ P_null
-        q_dot_task = self.damped_pinv(J_task_proj, damping=1e-2) @ (desired_tip_vel - J_tip @ q_dot_rcm)
-        
-        # Combine
-        q_dot = q_dot_rcm + P_null @ q_dot_task
-        
-        # Add roll velocity to J6
-        q_dot[5] += roll_vel
-        
-        return q_dot, np.linalg.norm(rcm_err)
+    def compute_tool_tip_pose(self, direction, insertion_depth, roll_angle=0.0):
+        direction = direction / np.linalg.norm(direction)
+        tip_position = self.rcm_point + insertion_depth * direction
+        flange_position = tip_position - self.tool_tip_offset * direction
+        flange_pose = self.pose_from_direction_roll(flange_position, direction, roll_angle)
+        return tip_position, flange_pose
+
+    def compute_rcm_error(self, flange_position, tool_direction):
+        flange_to_rcm = self.rcm_point - flange_position
+        distance_along_tool = float(flange_to_rcm @ tool_direction)
+        closest_point = flange_position + distance_along_tool * tool_direction
+        return self.rcm_point - closest_point
+
+    def compute_rcm_jacobian(self, joints, flange_position, tool_direction):
+        geometric = self.geometric_jacobian(joints)
+        j_pos = geometric[:3, :]
+        j_rot = geometric[3:, :]
+        distance_along_tool = float((self.rcm_point - flange_position) @ tool_direction)
+        perpendicular = np.eye(3) - np.outer(tool_direction, tool_direction)
+        return perpendicular @ j_pos - distance_along_tool * self.skew(tool_direction) @ j_rot
+
+    def solve_rcm_step(self, joints, command, insertion_depth, kp_rcm=8.0, damping=1e-3):
+        _, _, flange_position, _, tool_direction = self.forward_kinematics(joints)
+        rcm_error = self.compute_rcm_error(flange_position, tool_direction)
+        j_rcm = self.compute_rcm_jacobian(joints, flange_position, tool_direction)
+
+        j_rcm_pinv = self.damped_pinv(j_rcm, damping)
+        desired_rcm_velocity = kp_rcm * rcm_error
+        qdot_rcm = j_rcm_pinv @ desired_rcm_velocity
+        null_space = np.eye(6) - j_rcm_pinv @ j_rcm
+
+        tool_frame = self.pose_from_direction_roll(np.zeros(3), tool_direction, 0.0)
+        pitch_axis = tool_frame[:3, 0]
+        yaw_axis = tool_frame[:3, 1]
+        pivot_omega = command.pitch_rate * pitch_axis + command.yaw_rate * yaw_axis
+        desired_tip_velocity = insertion_depth * np.cross(pivot_omega, tool_direction)
+        desired_tip_velocity += command.insertion_rate * tool_direction
+
+        geometric = self.geometric_jacobian(joints)
+        j_tip = geometric[:3, :] - self.tool_tip_offset * self.skew(tool_direction) @ geometric[3:, :]
+        qdot_tip = self.damped_pinv(j_tip @ null_space, damping) @ (
+            desired_tip_velocity - j_tip @ qdot_rcm
+        )
+        qdot = qdot_rcm + null_space @ qdot_tip
+
+        j_roll = tool_direction.reshape(1, 3) @ geometric[3:, :]
+        projected_roll = j_roll @ null_space
+        if np.linalg.norm(projected_roll) > 1e-9:
+            current_roll_rate = float((j_roll @ qdot)[0])
+            qdot += null_space @ (
+                self.damped_pinv(projected_roll, damping)
+                @ np.array([command.roll_rate - current_roll_rate])
+            )
+
+        qdot += j_rcm_pinv @ (desired_rcm_velocity - j_rcm @ qdot)
+        return qdot, float(np.linalg.norm(rcm_error))
+
 
 def run_simulation():
-    # Initialize robot at a configuration where the shaft passes near RCM
-    joints = np.array([0.0, -0.4, 0.3, 0.0, 0.5, 0.0])
     controller = AR4RcmPrototype()
-    
-    # Target RCM point: [0.35, 0.0, 0.35]
-    print(f"RCM Point: {controller.rcm_point}")
-    
+    joints = np.radians(np.array([0.0, -22.0, 18.0, 0.0, 30.0, 0.0]))
+    insertion_depth = 0.10
     dt = 0.01
-    steps = 100
-    
-    print("\n--- Starting RCM Trajectory Simulation ---")
-    for step in range(steps):
-        # Command a sinusoidal circular trajectory for the tool tip in Y-Z plane
-        t = step * dt
-        desired_tip_vel = np.array([
-            0.0,
-            0.05 * np.cos(2 * np.pi * t),
-            0.05 * np.sin(2 * np.pi * t)
-        ])
-        
-        q_dot, err_magnitude = controller.solve_rcm_step(joints, desired_tip_vel, roll_vel=0.1, kp_rcm=10.0)
-        
-        # Apply integration step
-        joints += q_dot * dt
-        
-        if step % 20 == 0:
-            print(f"Step {step:03d} | RCM Error: {err_magnitude*1000.0:.4f} mm | Joints: {np.degrees(joints)}")
-            
-    print("-----------------------------------------")
-    print(f"Final RCM Error: {err_magnitude*1000.0:.4f} mm (< 1.0mm check passed!)")
+    max_error = 0.0
+
+    def limit_joint_velocity(qdot, limit=0.7):
+        maximum = float(np.max(np.abs(qdot)))
+        return qdot * (limit / maximum) if maximum > limit else qdot
+
+    print(f"RCM point: {controller.rcm_point}")
+    print("Converging shaft to the RCM before teleoperation...")
+
+    for step in range(600):
+        qdot, error = controller.solve_rcm_step(joints, ToolCommand(), insertion_depth)
+        joints += limit_joint_velocity(qdot) * dt
+        if error < 5e-4:
+            break
+
+    print(f"Initial lock error: {error * 1000.0:.3f} mm")
+    print("Running 100 Hz pivot/insertion prototype...")
+
+    for step in range(400):
+        elapsed = step * dt
+        command = ToolCommand(
+            pitch_rate=0.10 * math.sin(2.0 * math.pi * 0.25 * elapsed),
+            yaw_rate=0.12 * math.cos(2.0 * math.pi * 0.20 * elapsed),
+            roll_rate=0.25,
+            insertion_rate=0.004 * math.sin(2.0 * math.pi * 0.15 * elapsed),
+        )
+        insertion_depth = float(np.clip(insertion_depth + command.insertion_rate * dt, 0.02, 0.24))
+        qdot, error = controller.solve_rcm_step(joints, command, insertion_depth)
+        joints += limit_joint_velocity(qdot) * dt
+        max_error = max(max_error, error)
+
+        if step % 50 == 0:
+            _, _, _, _, direction = controller.forward_kinematics(joints)
+            tip, _ = controller.compute_tool_tip_pose(direction, insertion_depth)
+            print(
+                f"{step:03d} error={error * 1000.0:7.3f} mm "
+                f"insert={insertion_depth:.3f} m tip={np.round(tip, 3)}"
+            )
+
+        time.sleep(0.0)
+
+    print(f"Max RCM error: {max_error * 1000.0:.3f} mm")
+
 
 if __name__ == "__main__":
     run_simulation()

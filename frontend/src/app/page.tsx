@@ -7,6 +7,9 @@ import TelemetryPanel from "@/components/TelemetryPanel";
 import StatusIndicators from "@/components/StatusIndicators";
 import Joystick from "@/components/Joystick";
 import RobotArmVisualizer from "@/components/RobotArmVisualizer";
+import type { RobotTelemetry } from "@/types/telemetry";
+
+type CommandPayload = Record<string, unknown>;
 
 const normalizeBackendHttpUrl = () => {
   let raw = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").trim();
@@ -25,11 +28,11 @@ const normalizeBackendHttpUrl = () => {
 export default function Home() {
   const [wsStatus, setWsStatus] = useState("Disconnected");
   const [cameraStatus, setCameraStatus] = useState(false);
-  const [position, setPosition] = useState<any>({});
+  const [position, setPosition] = useState<RobotTelemetry>({});
   const [speed, setSpeed] = useState(25);
   const [stats, setStats] = useState({ fps: 0, latency: 0, controlLatency: 0 });
   const [lockNeedle, setLockNeedle] = useState(false);
-  const [needleLength, setNeedleLength] = useState(55.0);
+  const [needleLength] = useState(55.0);
   const [targetX, setTargetX] = useState("");
   const [targetY, setTargetY] = useState("");
   const [activeTab, setActiveTab] = useState<"video" | "twin">("video");
@@ -37,6 +40,8 @@ export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
   const activeKeys = useRef<Set<string>>(new Set());
   const activeMotionRef = useRef<string | null>(null);
+  const activeCommandRef = useRef<CommandPayload | null>(null);
+  const jogHeartbeatRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
 
   useEffect(() => {
     const backendHttpUrl = normalizeBackendHttpUrl();
@@ -62,11 +67,17 @@ export default function Home() {
               setStats((prev) => ({ ...prev, controlLatency: currentLatency }));
             }
           }
-        } catch (e) {}
+        } catch {}
       };
 
       ws.onclose = () => {
         setWsStatus("Disconnected");
+        activeMotionRef.current = null;
+        activeCommandRef.current = null;
+        if (jogHeartbeatRef.current) {
+          window.clearInterval(jogHeartbeatRef.current);
+          jogHeartbeatRef.current = null;
+        }
         setTimeout(connectWs, 2000); // Auto reconnect
       };
 
@@ -84,7 +95,7 @@ export default function Home() {
     };
   }, []);
 
-  const sendCommand = useCallback((cmd: any) => {
+  const sendCommand = useCallback((cmd: CommandPayload) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const cmdWithTimestamp = { ...cmd, timestamp: Date.now() };
       wsRef.current.send(JSON.stringify(cmdWithTimestamp));
@@ -109,9 +120,15 @@ export default function Home() {
   }, [targetX, targetY, sendCommand]);
 
   const stopRobot = useCallback(() => {
+    if (jogHeartbeatRef.current) {
+      window.clearInterval(jogHeartbeatRef.current);
+      jogHeartbeatRef.current = null;
+    }
+
     if (activeMotionRef.current !== null) {
       sendCommand({ command: "stop", lock_needle: lockNeedle, needle_length: needleLength });
       activeMotionRef.current = null;
+      activeCommandRef.current = null;
     }
   }, [sendCommand, lockNeedle, needleLength]);
 
@@ -120,7 +137,7 @@ export default function Home() {
     activeMotionRef.current = null;
   }, [sendCommand]);
 
-  const startContinuousCommand = useCallback((motionKey: string, cmd: any) => {
+  const startContinuousCommand = useCallback((motionKey: string, cmd: CommandPayload) => {
     if (activeMotionRef.current === motionKey) {
       return;
     }
@@ -130,7 +147,16 @@ export default function Home() {
     }
 
     activeMotionRef.current = motionKey;
+    activeCommandRef.current = cmd;
     sendCommand(cmd);
+    if (jogHeartbeatRef.current) {
+      window.clearInterval(jogHeartbeatRef.current);
+    }
+    jogHeartbeatRef.current = window.setInterval(() => {
+      if (activeCommandRef.current) {
+        sendCommand(activeCommandRef.current);
+      }
+    }, 150);
   }, [sendCommand]);
 
   const startJogJoint = useCallback((joint: number, direction: string) => {
@@ -192,6 +218,25 @@ export default function Home() {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [startJogCartesian, startJogJoint, stopRobot, emergencyStop]);
+
+  useEffect(() => {
+    const stopOnGlobalRelease = () => stopRobot();
+    const stopOnVisibilityChange = () => {
+      if (document.hidden) stopRobot();
+    };
+
+    window.addEventListener("pointerup", stopOnGlobalRelease);
+    window.addEventListener("pointercancel", stopOnGlobalRelease);
+    window.addEventListener("blur", stopOnGlobalRelease);
+    document.addEventListener("visibilitychange", stopOnVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pointerup", stopOnGlobalRelease);
+      window.removeEventListener("pointercancel", stopOnGlobalRelease);
+      window.removeEventListener("blur", stopOnGlobalRelease);
+      document.removeEventListener("visibilitychange", stopOnVisibilityChange);
+    };
+  }, [stopRobot]);
 
   // Joystick handling
   const handleJoystickMove = (x: number, y: number) => {
