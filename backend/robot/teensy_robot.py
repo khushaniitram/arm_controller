@@ -237,6 +237,25 @@ class TeensyRobot(BaseRobot):
             print(f"Command skipped (serial disconnected): {cmd}")
             return False
 
+    def _parse_feedback(self, line):
+        import re
+        pattern = re.compile(r"([A-M])(-?\d+\.?\d*)")
+        matches = pattern.findall(line)
+        parsed = {k: float(v) for k, v in matches}
+        
+        # Only update if we are not actively tracking/simulating needle lock,
+        # to avoid conflicts between local kinematics calculations and raw serial reports.
+        if not getattr(self, "_tracker_running", False):
+            if "A" in parsed: self.position["j1"] = parsed["A"]
+            if "B" in parsed: self.position["j2"] = parsed["B"]
+            if "C" in parsed: self.position["j3"] = parsed["C"]
+            if "D" in parsed: self.position["j4"] = parsed["D"]
+            if "E" in parsed: self.position["j5"] = parsed["E"]
+            if "F" in parsed: self.position["j6"] = parsed["F"]
+            if "G" in parsed: self.position["x"] = parsed["G"]
+            if "H" in parsed: self.position["y"] = parsed["H"]
+            if "I" in parsed: self.position["z"] = parsed["I"]
+
     def _read_loop(self):
         while self.running:
             if not self._ensure_connected():
@@ -257,6 +276,7 @@ class TeensyRobot(BaseRobot):
                         elif line.startswith("A"):
                             self.last_motion_error = None
                             self._waiting_for_ack = False
+                            self._parse_feedback(line)
                         print(f"[ROBOT] <- {line}")
             except Exception as exc:
                 self._mark_disconnected(str(exc))
