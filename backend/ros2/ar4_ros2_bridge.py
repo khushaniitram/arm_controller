@@ -21,7 +21,10 @@ except ImportError:
     class JointTrajectory: pass
     class Node:
         def __init__(self, name): pass
-        def create_publisher(self, type, topic, qos): return None
+        def create_publisher(self, type, topic, qos):
+            class MockPublisher:
+                def publish(self, msg): pass
+            return MockPublisher()
         def create_subscription(self, type, topic, cb, qos): return None
         def get_logger(self):
             class Logger:
