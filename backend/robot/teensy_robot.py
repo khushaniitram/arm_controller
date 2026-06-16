@@ -276,7 +276,7 @@ class TeensyRobot(BaseRobot):
             raise ValueError(f"Invalid joint index: {joint}")
 
         move_dir = "1" if direction == "+" else "0"
-        cmd = f"LJV{joint}{move_dir}Sp{self.speed}Ac15Dc15Rm80WLm000000"
+        cmd = f"LJV{joint}{move_dir}Sp{self.speed}Ac15Dc99Rm80WLm000000"
         if self._send_command(cmd):
             amount = 1 if direction == "+" else -1
             self.position[f"j{joint}"] += amount
@@ -291,7 +291,7 @@ class TeensyRobot(BaseRobot):
 
         axis_number = self.AXIS_MAP[axis_upper]
         move_dir = "1" if direction == "+" else "0"
-        cmd = f"LCV{axis_number}{move_dir}Sp{self.speed}Ac15Dc15Rm80WFLm000000"
+        cmd = f"LCV{axis_number}{move_dir}Sp{self.speed}Ac15Dc99Rm80WFLm000000"
         if self._send_command(cmd):
             amount = 1 if direction == "+" else -1
             axis_key = axis_upper.lower()
