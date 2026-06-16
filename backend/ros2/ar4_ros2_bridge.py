@@ -14,7 +14,7 @@ try:
     from trajectory_msgs.msg import JointTrajectory
 except ImportError:
     print("[WARN] ROS 2 (rclpy) is not installed or sourced in this environment.")
-    print("This script is written as a template and driver bridge to be run within your ROS 2 workspace.")
+    print("Running in MOCK ROS 2 MODE for simulation and local web server testing.")
     # Fallbacks for syntax check
     class JointState: pass
     class Header: pass
@@ -25,9 +25,9 @@ except ImportError:
         def create_subscription(self, type, topic, cb, qos): return None
         def get_logger(self):
             class Logger:
-                def info(self, msg): print(msg)
-                def warn(self, msg): print(msg)
-                def error(self, msg): print(msg)
+                def info(self, msg): print(f"[INFO] {msg}")
+                def warn(self, msg): print(f"[WARN] {msg}")
+                def error(self, msg): print(f"[ERROR] {msg}")
             return Logger()
         def get_clock(self):
             class Clock:
@@ -36,6 +36,23 @@ except ImportError:
                         def to_msg(self): return None
                     return Time()
             return Clock()
+        def destroy_node(self):
+            pass
+
+    class MockRclpy:
+        @staticmethod
+        def ok():
+            return True
+        @staticmethod
+        def init(args=None):
+            print("[MOCK] Initializing Mock rclpy...")
+        @staticmethod
+        def shutdown():
+            print("[MOCK] Shutting down Mock rclpy...")
+        @staticmethod
+        def spin_once(node, timeout_sec=0.0):
+            pass
+    rclpy = MockRclpy
 
 class AR4Ros2Bridge(Node):
     def __init__(self, ws_url="ws://localhost:8000/ws"):
@@ -166,6 +183,26 @@ async def receive_websocket(node, ws_url):
             node.get_logger().warn(f"WebSocket disconnected or failed: {e}. Reconnecting in 2s...")
             await asyncio.sleep(2.0)
 
+async def mock_trajectory_commands(node):
+    import time
+    await asyncio.sleep(5.0)
+    while True:
+        if node.connected:
+            node.get_logger().info("Generating mock joint trajectory movement...")
+            class MockPoint:
+                def __init__(self, positions):
+                    self.positions = positions
+            class MockTrajectory:
+                def __init__(self, positions):
+                    self.points = [MockPoint(positions)]
+            
+            # Target a slight offset
+            offset = 1.0 if (int(time.time()) // 10) % 2 == 0 else -1.0
+            target_positions = [math.radians(deg + offset) for deg in node.current_joints]
+            msg = MockTrajectory(target_positions)
+            node.trajectory_callback(msg)
+        await asyncio.sleep(10.0)
+
 async def spin_node_async(node):
     while rclpy.ok():
         rclpy.spin_once(node, timeout_sec=0.01)
@@ -182,6 +219,10 @@ def main(args=None):
     # Schedule tasks
     loop.create_task(receive_websocket(node, node.ws_url))
     loop.create_task(spin_node_async(node))
+    
+    # Check if we are running in mock mode
+    if rclpy.__name__ == "MockRclpy" or (hasattr(rclpy, "__name__") and rclpy.__name__ == "MockRclpy") or "MockRclpy" in str(rclpy):
+        loop.create_task(mock_trajectory_commands(node))
 
     try:
         loop.run_forever()
@@ -192,7 +233,4 @@ def main(args=None):
         rclpy.shutdown()
 
 if __name__ == "__main__":
-    if "rclpy" not in sys.modules:
-        print("[ERROR] Please source your ROS 2 environment (e.g. source /opt/ros/humble/setup.bash) before running this script.")
-        sys.exit(1)
     main()
