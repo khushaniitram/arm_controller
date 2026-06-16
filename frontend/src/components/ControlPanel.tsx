@@ -6,20 +6,21 @@ interface ControlPanelProps {
   onStop: () => void;
   speed: number;
   onSpeedChange: (speed: number) => void;
+  lockNeedle?: boolean;
 }
 
-export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed, onSpeedChange }: ControlPanelProps) {
+export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed, onSpeedChange, lockNeedle = false }: ControlPanelProps) {
   const joints = [1, 2, 3, 4, 5, 6];
   const cartesian = ["X", "Y", "Z"];
 
   return (
-    <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 flex flex-col gap-6">
+    <div className="bg-white rounded-xl p-6 border border-zinc-200 flex flex-col gap-6 shadow-sm text-zinc-900">
       
       {/* Speed Control */}
       <div>
         <div className="flex justify-between items-center mb-2">
-          <h3 className="text-sm font-semibold text-slate-300">Speed</h3>
-          <span className="text-blue-400 font-mono text-sm">{speed}%</span>
+          <h3 className="text-sm font-bold text-zinc-800">Speed</h3>
+          <span className="text-zinc-950 font-mono text-sm font-semibold">{speed}%</span>
         </div>
         <input 
           type="range" 
@@ -27,41 +28,57 @@ export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed
           max="100" 
           value={speed}
           onChange={(e) => onSpeedChange(parseInt(e.target.value))}
-          className="w-full accent-blue-500 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+          className="w-full accent-zinc-900 h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
         />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Joint Controls */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3 border-b border-slate-800 pb-2">Joint Control</h3>
+          <h3 className="text-sm font-bold text-zinc-800 mb-3 border-b border-zinc-100 pb-2">Joint Control</h3>
           <div className="grid grid-cols-2 gap-2">
-            {joints.map(j => (
-              <div key={j} className="flex gap-1">
-                <button 
-                  onPointerDown={() => onJogJoint(j, "-")}
-                  onPointerUp={onStop}
-                  onPointerLeave={onStop}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 px-2 py-3 rounded text-sm select-none touch-none transition-colors"
-                >
-                  J{j}-
-                </button>
-                <button 
-                  onPointerDown={() => onJogJoint(j, "+")}
-                  onPointerUp={onStop}
-                  onPointerLeave={onStop}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 px-2 py-3 rounded text-sm select-none touch-none transition-colors"
-                >
-                  J{j}+
-                </button>
-              </div>
-            ))}
+            {joints.map(j => {
+              const isWrist = j >= 4;
+              const disabled = isWrist && lockNeedle;
+              return (
+                <div key={j} className="flex gap-1">
+                  <button 
+                    onPointerDown={() => onJogJoint(j, "-")}
+                    onPointerUp={onStop}
+                    onPointerLeave={onStop}
+                    onPointerCancel={onStop}
+                    disabled={disabled}
+                    className={`flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer ${
+                      disabled 
+                        ? "bg-zinc-50 border-zinc-100 text-zinc-400 cursor-not-allowed opacity-60"
+                        : "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
+                    }`}
+                  >
+                    {disabled ? "🔒" : ""} J{j}-
+                  </button>
+                  <button 
+                    onPointerDown={() => onJogJoint(j, "+")}
+                    onPointerUp={onStop}
+                    onPointerLeave={onStop}
+                    onPointerCancel={onStop}
+                    disabled={disabled}
+                    className={`flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer ${
+                      disabled 
+                        ? "bg-zinc-50 border-zinc-100 text-zinc-400 cursor-not-allowed opacity-60"
+                        : "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
+                    }`}
+                  >
+                    {disabled ? "🔒" : ""} J{j}+
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         {/* Cartesian Controls */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3 border-b border-slate-800 pb-2">Cartesian Control</h3>
+          <h3 className="text-sm font-bold text-zinc-800 mb-3 border-b border-zinc-100 pb-2">Cartesian Control</h3>
           <div className="grid grid-cols-1 gap-2">
             {cartesian.map(axis => (
               <div key={axis} className="flex gap-2">
@@ -69,7 +86,8 @@ export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed
                   onPointerDown={() => onJogCartesian(axis, "-")}
                   onPointerUp={onStop}
                   onPointerLeave={onStop}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 px-4 py-3 rounded select-none touch-none transition-colors"
+                  onPointerCancel={onStop}
+                  className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white px-4 py-3 rounded font-semibold select-none touch-none transition-all border border-zinc-200/60 shadow-xs cursor-pointer"
                 >
                   {axis}-
                 </button>
@@ -77,7 +95,8 @@ export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed
                   onPointerDown={() => onJogCartesian(axis, "+")}
                   onPointerUp={onStop}
                   onPointerLeave={onStop}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 px-4 py-3 rounded select-none touch-none transition-colors"
+                  onPointerCancel={onStop}
+                  className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white px-4 py-3 rounded font-semibold select-none touch-none transition-all border border-zinc-200/60 shadow-xs cursor-pointer"
                 >
                   {axis}+
                 </button>

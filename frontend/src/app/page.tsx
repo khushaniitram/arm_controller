@@ -26,10 +26,12 @@ export default function Home() {
   const [cameraStatus, setCameraStatus] = useState(false);
   const [position, setPosition] = useState<any>({});
   const [speed, setSpeed] = useState(25);
-  const [stats, setStats] = useState({ fps: 0, latency: 0 });
+  const [stats, setStats] = useState({ fps: 0, latency: 0, controlLatency: 0 });
+  const [lockNeedle, setLockNeedle] = useState(false);
+  const [targetX, setTargetX] = useState("");
+  const [targetY, setTargetY] = useState("");
   
   const wsRef = useRef<WebSocket | null>(null);
-  const jogIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeKeys = useRef<Set<string>>(new Set());
   const activeMotionRef = useRef<string | null>(null);
 
@@ -52,6 +54,10 @@ export default function Home() {
           const data = JSON.parse(event.data);
           if (data.type === "feedback") {
             setPosition(data.data);
+            if (data.timestamp) {
+              const currentLatency = Date.now() - data.timestamp;
+              setStats((prev) => ({ ...prev, controlLatency: currentLatency }));
+            }
           }
         } catch (e) {}
       };
@@ -77,15 +83,29 @@ export default function Home() {
 
   const sendCommand = useCallback((cmd: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(cmd));
+      const cmdWithTimestamp = { ...cmd, timestamp: Date.now() };
+      wsRef.current.send(JSON.stringify(cmdWithTimestamp));
     }
   }, []);
 
+  const handleVideoStatsUpdate = useCallback((videoStats: { fps: number; latency: number }) => {
+    setStats((prev) => ({
+      ...prev,
+      fps: videoStats.fps,
+      latency: videoStats.latency,
+    }));
+  }, []);
+
+  const handleExecuteMove = useCallback(() => {
+    if (!targetX || !targetY) return;
+    sendCommand({
+      command: "move_to",
+      x: parseFloat(targetX),
+      y: parseFloat(targetY)
+    });
+  }, [targetX, targetY, sendCommand]);
+
   const stopRobot = useCallback(() => {
-    if (jogIntervalRef.current) {
-      clearInterval(jogIntervalRef.current);
-      jogIntervalRef.current = null;
-    }
     if (activeMotionRef.current !== null) {
       sendCommand({ command: "stop" });
       activeMotionRef.current = null;
@@ -93,22 +113,13 @@ export default function Home() {
   }, [sendCommand]);
 
   const emergencyStop = useCallback(() => {
-    if (jogIntervalRef.current) {
-      clearInterval(jogIntervalRef.current);
-      jogIntervalRef.current = null;
-    }
     sendCommand({ command: "stop" });
     activeMotionRef.current = null;
   }, [sendCommand]);
 
   const startContinuousCommand = useCallback((motionKey: string, cmd: any) => {
-    if (activeMotionRef.current === motionKey && jogIntervalRef.current) {
+    if (activeMotionRef.current === motionKey) {
       return;
-    }
-
-    if (jogIntervalRef.current) {
-      clearInterval(jogIntervalRef.current);
-      jogIntervalRef.current = null;
     }
 
     if (activeMotionRef.current !== null) {
@@ -117,7 +128,6 @@ export default function Home() {
 
     activeMotionRef.current = motionKey;
     sendCommand(cmd);
-    jogIntervalRef.current = setInterval(() => sendCommand(cmd), 120);
   }, [sendCommand]);
 
   const startJogJoint = useCallback((joint: number, direction: string) => {
@@ -169,8 +179,6 @@ export default function Home() {
 
     const handleKeyUp = (e: KeyboardEvent) => {
       activeKeys.current.delete(e.code);
-      // Only stop if no keys that trigger movement are pressed? Simple approach: just stop.
-      // A more robust approach stops only if movement keys are released.
       stopRobot();
     };
 
@@ -184,32 +192,28 @@ export default function Home() {
 
   // Joystick handling
   const handleJoystickMove = (x: number, y: number) => {
-    // Only triggering highest axis for simplicity, or we could trigger both.
-    // The backend only accepts one axis per cartesian command in the current API.
-    // But since we can send commands, we could alternate, or just pick the dominant axis.
     if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) {
       stopRobot();
       return;
     }
     
-    // Pick dominant axis for now since backend jog_cartesian only takes one axis at a time
     if (Math.abs(x) > Math.abs(y)) {
       startJogCartesian("X", x > 0 ? "+" : "-");
     } else {
-      startJogCartesian("Y", y > 0 ? "-" : "+"); // invert Y so up is +
+      startJogCartesian("Y", y > 0 ? "-" : "+");
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-6 font-sans">
-      <div className="max-w-7xl mx-auto space-y-4">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 p-4 md:p-6 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
         
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2 pb-4 border-b border-zinc-200">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950">
               AR4 Teleoperation Control
             </h1>
-            <p className="text-slate-400 text-sm mt-1">Industrial Robotics Interface</p>
+            <p className="text-zinc-500 text-sm mt-1">Industrial Robotics Interface</p>
           </div>
           <StatusIndicators 
             wsStatus={wsStatus} 
@@ -222,7 +226,7 @@ export default function Home() {
           
           {/* Main Content: Video & Telemetry */}
           <div className="lg:col-span-8 flex flex-col gap-6">
-            <VideoPlayer streamStatusCallback={setCameraStatus} onStatsUpdate={setStats} />
+            <VideoPlayer streamStatusCallback={setCameraStatus} onStatsUpdate={handleVideoStatsUpdate} />
             <TelemetryPanel position={position} speed={speed} stats={stats} />
           </div>
 
@@ -235,15 +239,104 @@ export default function Home() {
               onStop={stopRobot}
               speed={speed}
               onSpeedChange={handleSpeedChange}
+              lockNeedle={lockNeedle}
             />
 
-            <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 flex justify-center items-center py-10">
+            {/* Needle Control Panel */}
+            <div className="bg-white rounded-xl p-6 border border-zinc-200 flex flex-col gap-4 shadow-sm text-zinc-900">
+              <div className="flex justify-between items-center border-b border-zinc-150 pb-2.5 mb-1">
+                <h3 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                  📍 Needle Positioner
+                </h3>
+                {position?.moving_to_coords && (
+                  <span className="flex h-2.5 w-2.5 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                )}
+              </div>
+
+              {/* Lock Needle Toggle Button */}
+              <button
+                onClick={() => setLockNeedle(prev => !prev)}
+                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all active:scale-[0.98] cursor-pointer shadow-xs border ${
+                  lockNeedle
+                    ? "bg-zinc-900 text-white border-zinc-955 hover:bg-zinc-850"
+                    : "bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-205"
+                }`}
+              >
+                {lockNeedle ? "🔒 Needle Direction Locked" : "🔓 Lock Needle Direction"}
+              </button>
+
+              {/* Coordinate Fields */}
+              <div className={`transition-all duration-300 overflow-hidden ${lockNeedle ? "max-h-60 opacity-100 mt-1" : "max-h-0 opacity-0 pointer-events-none"}`}>
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-500 mb-1">Target X</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={targetX}
+                        onChange={(e) => setTargetX(e.target.value)}
+                        placeholder="e.g. 15.0"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-lg py-2 px-3 text-sm font-mono text-zinc-900 focus:outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-500 mb-1">Target Y</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={targetY}
+                        onChange={(e) => setTargetY(e.target.value)}
+                        placeholder="e.g. -10.0"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-lg py-2 px-3 text-sm font-mono text-zinc-900 focus:outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleExecuteMove}
+                    disabled={!targetX || !targetY || position?.moving_to_coords}
+                    className={`w-full py-3 rounded-lg font-bold text-sm transition-all active:scale-[0.98] cursor-pointer border shadow-xs ${
+                      position?.moving_to_coords
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-wait animate-pulse"
+                        : (!targetX || !targetY)
+                        ? "bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
+                        : "bg-zinc-900 text-white border-zinc-950 hover:bg-zinc-800"
+                    }`}
+                  >
+                    {position?.moving_to_coords 
+                      ? "Moving to coordinates..." 
+                      : "Go to Coordinates (X, Y)"}
+                  </button>
+                  
+                  {position?.moving_to_coords && (
+                    <button
+                      onClick={emergencyStop}
+                      className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel Movement
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!lockNeedle && (
+                <p className="text-xs text-zinc-400 text-center leading-relaxed">
+                  Lock the needle direction to enable coordinate target positioning.
+                </p>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-zinc-200 flex justify-center items-center py-10 shadow-sm">
                <Joystick onMove={handleJoystickMove} onStop={stopRobot} label="XY Movement" />
             </div>
 
             <button
               onPointerDown={emergencyStop}
-              className="bg-red-600 hover:bg-red-500 active:bg-red-700 active:scale-95 transition-all text-white font-bold text-xl py-6 rounded-xl shadow-lg shadow-red-900/50 uppercase tracking-widest border border-red-500"
+              className="bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-lg py-5 rounded-xl transition-all shadow-md active:scale-[0.98] uppercase tracking-widest border border-rose-500 cursor-pointer"
             >
               Emergency Stop (Space)
             </button>

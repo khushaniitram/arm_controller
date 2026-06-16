@@ -58,6 +58,8 @@ class TeensyRobot(BaseRobot):
         self._lock = threading.Lock()
         self._last_reconnect_attempt = 0.0
         self._last_motion_command_at = 0.0
+        self._waiting_for_ack = False
+        self._last_motion_sent_at = 0.0
 
         self._connect(force=True)
 
@@ -212,11 +214,20 @@ class TeensyRobot(BaseRobot):
             print(f"Command skipped (serial disconnected): {cmd}")
             return False
 
+        now = time.time()
         if self._is_motion_command(cmd):
-            now = time.time()
+            # If we are waiting for an ACK and it hasn't timed out (1.0 sec), skip the command
+            if self._waiting_for_ack and (now - self._last_motion_sent_at) < 1.0:
+                return False
+
             if (now - self._last_motion_command_at) < self.min_motion_interval:
                 return False
             self._last_motion_command_at = now
+            self._waiting_for_ack = True
+            self._last_motion_sent_at = now
+        elif cmd == "SS":
+            # Stop command immediately clears the waiting state and goes through
+            self._waiting_for_ack = False
 
         try:
             payload = f"{cmd}\n".encode("utf-8")
@@ -245,10 +256,13 @@ class TeensyRobot(BaseRobot):
                         self.last_controller_message = line
                         if line.startswith("EL"):
                             self.last_motion_error = f"Motion limit reached: {line}"
+                            self._waiting_for_ack = False
                         elif line.startswith("ER"):
                             self.last_motion_error = f"Controller rejected motion command: {line}"
+                            self._waiting_for_ack = False
                         elif line.startswith("A"):
                             self.last_motion_error = None
+                            self._waiting_for_ack = False
                         print(f"[ROBOT] <- {line}")
             except Exception as exc:
                 self._mark_disconnected(str(exc))
@@ -285,6 +299,7 @@ class TeensyRobot(BaseRobot):
                 self.position[axis_key] += amount
 
     def stop(self):
+        self.cancel_move_to()
         self._send_command("SS")
 
     def set_speed(self, speed):
@@ -301,8 +316,10 @@ class TeensyRobot(BaseRobot):
         feedback["error"] = self.last_error
         feedback["controller_message"] = self.last_controller_message
         feedback["motion_error"] = self.last_motion_error
+        feedback["moving_to_coords"] = self.is_moving_to_coords()
         return feedback
 
     def close(self):
+        self.cancel_move_to()
         self.running = False
         self._mark_disconnected()

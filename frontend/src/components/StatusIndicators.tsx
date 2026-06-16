@@ -7,20 +7,25 @@ interface StatusIndicatorsProps {
 }
 
 export default function StatusIndicators({ wsStatus, cameraStatus, robotState }: StatusIndicatorsProps) {
+  const isWsConnected = wsStatus === 'Connected';
+  const isCameraReady = cameraStatus;
+  const isSim = robotState === 'Simulation Mode';
+  const isRobotConnected = robotState.includes('Connected') || isSim;
+
   return (
-    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 flex flex-wrap gap-4 text-sm font-medium">
-      <div className={`flex items-center gap-2 ${wsStatus === 'Connected' ? 'text-green-400' : 'text-red-400'}`}>
-        <span className={`w-2.5 h-2.5 rounded-full ${wsStatus === 'Connected' ? 'bg-green-500' : 'bg-red-500'}`} />
-        WebSocket {wsStatus}
+    <div className="bg-white rounded-xl p-3 border border-zinc-200 flex flex-wrap gap-2 text-xs font-semibold shadow-xs">
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${isWsConnected ? 'text-emerald-700 bg-emerald-50/60 border-emerald-200/80' : 'text-rose-700 bg-rose-50/60 border-rose-200/80'}`}>
+        <span className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+        WS: {wsStatus}
       </div>
       
-      <div className={`flex items-center gap-2 ${cameraStatus ? 'text-green-400' : 'text-red-400'}`}>
-        <span className={`w-2.5 h-2.5 rounded-full ${cameraStatus ? 'bg-green-500' : 'bg-red-500'}`} />
-        Camera {cameraStatus ? 'Ready' : 'Disconnected'}
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${isCameraReady ? 'text-emerald-700 bg-emerald-50/60 border-emerald-200/80' : 'text-rose-700 bg-rose-50/60 border-rose-200/80'}`}>
+        <span className={`w-2 h-2 rounded-full ${isCameraReady ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+        Cam: {isCameraReady ? 'Ready' : 'Offline'}
       </div>
 
-      <div className={`flex items-center gap-2 ${robotState === 'Simulation Mode' ? 'text-yellow-400' : (robotState.includes('Disconnected') ? 'text-red-400' : 'text-green-400')}`}>
-        <span className={`w-2.5 h-2.5 rounded-full ${robotState === 'Simulation Mode' ? 'bg-yellow-500' : (robotState.includes('Disconnected') ? 'bg-red-500' : 'bg-green-500')}`} />
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${isSim ? 'text-amber-700 bg-amber-50/60 border-amber-200/80' : (isRobotConnected ? 'text-emerald-700 bg-emerald-50/60 border-emerald-200/80' : 'text-rose-700 bg-rose-50/60 border-rose-200/80')}`}>
+        <span className={`w-2 h-2 rounded-full ${isSim ? 'bg-amber-500' : (isRobotConnected ? 'bg-emerald-500' : 'bg-rose-500')}`} />
         {robotState}
       </div>
     </div>

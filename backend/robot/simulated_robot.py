@@ -48,7 +48,7 @@ class SimulatedRobot(BaseRobot):
 
 
     def stop(self):
-
+        self.cancel_move_to()
         print(
             "Robot stopped"
         )
@@ -66,4 +66,6 @@ class SimulatedRobot(BaseRobot):
     def read_feedback(self):
         feedback = self.position.copy()
         feedback["mode"] = "Simulation Mode"
+        feedback["connected"] = True
+        feedback["moving_to_coords"] = self.is_moving_to_coords()
         return feedback

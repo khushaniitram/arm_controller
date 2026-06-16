@@ -53,17 +53,17 @@ export default function Joystick({ onMove, onStop, label }: JoystickProps) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {label && <span className="text-sm text-slate-400 font-semibold">{label}</span>}
+      {label && <span className="text-sm text-zinc-500 font-bold">{label}</span>}
       <div 
         ref={containerRef}
-        className="w-32 h-32 rounded-full bg-slate-800 border-2 border-slate-700 relative touch-none"
+        className="w-32 h-32 rounded-full bg-zinc-100 border-2 border-zinc-200/80 relative touch-none shadow-inner"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
         <div 
-          className="w-12 h-12 rounded-full bg-blue-500 absolute top-1/2 left-1/2 shadow-lg shadow-blue-500/50"
+          className="w-12 h-12 rounded-full bg-zinc-900 absolute top-1/2 left-1/2 shadow-md shadow-zinc-900/30 border border-zinc-950 hover:bg-zinc-800 active:scale-95 transition-all cursor-grab active:cursor-grabbing"
           style={{
             transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
             transition: isDragging ? 'none' : 'transform 0.2s ease-out'

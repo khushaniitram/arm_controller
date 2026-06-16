@@ -1,6 +1,10 @@
 import asyncio
+import os
 import threading
 import time
+
+# Silence OpenCV log spam (warning and error messages) in the console
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 
 import cv2
 import numpy as np
