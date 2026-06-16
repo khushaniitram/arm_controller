@@ -29,7 +29,7 @@ export default function Home() {
   const [speed, setSpeed] = useState(25);
   const [stats, setStats] = useState({ fps: 0, latency: 0, controlLatency: 0 });
   const [lockNeedle, setLockNeedle] = useState(false);
-  const [needleLength, setNeedleLength] = useState(50);
+  const [needleLength, setNeedleLength] = useState(55.0);
   const [targetX, setTargetX] = useState("");
   const [targetY, setTargetY] = useState("");
   const [activeTab, setActiveTab] = useState<"video" | "twin">("video");
@@ -287,7 +287,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Lock Needle Toggle Button */}
+              {/* Lock Robot Tip Toggle Button */}
               <button
                 onClick={() => setLockNeedle(prev => !prev)}
                 className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all active:scale-[0.98] cursor-pointer shadow-xs border ${
@@ -296,24 +296,8 @@ export default function Home() {
                     : "bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-205"
                 }`}
               >
-                {lockNeedle ? "🔒 Needle Direction Locked" : "🔓 Lock Needle Direction"}
+                {lockNeedle ? "🔒 Robot Tip Locked" : "🔓 Lock Robot Tip"}
               </button>
-
-              {/* Needle Length Configuration Slider */}
-              <div className="flex flex-col gap-1.5 mt-2 bg-zinc-50 border border-zinc-200 rounded-lg p-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-zinc-500">Needle Offset Length</label>
-                  <span className="font-mono text-xs text-zinc-800 font-bold bg-zinc-200/60 px-1.5 py-0.5 rounded">{needleLength} units</span>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="150"
-                  value={needleLength}
-                  onChange={(e) => setNeedleLength(parseInt(e.target.value))}
-                  className="w-full accent-zinc-900 h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
 
               {/* Coordinate Fields */}
               <div className={`transition-all duration-300 overflow-hidden ${lockNeedle ? "max-h-60 opacity-100 mt-1" : "max-h-0 opacity-0 pointer-events-none"}`}>
@@ -351,7 +335,7 @@ export default function Home() {
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-wait animate-pulse"
                         : (!targetX || !targetY)
                         ? "bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
-                        : "bg-zinc-900 text-white border-zinc-950 hover:bg-zinc-800"
+                        : "bg-zinc-900 text-white border-zinc-955 hover:bg-zinc-800"
                     }`}
                   >
                     {position?.moving_to_coords 
@@ -372,7 +356,7 @@ export default function Home() {
 
               {!lockNeedle && (
                 <p className="text-xs text-zinc-400 text-center leading-relaxed">
-                  Lock the needle direction to enable coordinate target positioning.
+                  Lock the robot tip position to enable coordinate target positioning.
                 </p>
               )}
             </div>

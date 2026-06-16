@@ -62,7 +62,7 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
 
     // 1. Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0c); // Dark theme
+    scene.background = new THREE.Color(0xf1f5f9); // Professional slate-100 background
     sceneRef.current = scene;
 
     // 2. Camera setup
@@ -89,38 +89,40 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
     controlsRef.current = controls;
 
     // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Bright ambient lighting
     scene.add(ambientLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.7);
     dirLight1.position.set(200, 400, 200);
     dirLight1.castShadow = true;
     scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x3b82f6, 0.5); // Blue fill light
+    const dirLight2 = new THREE.DirectionalLight(0x94a3b8, 0.3); // Soft blue-slate fill
     dirLight2.position.set(-200, 200, -200);
     scene.add(dirLight2);
 
     // 6. Floor grid
-    const gridHelper = new THREE.GridHelper(300, 30, 0x3b82f6, 0x27272a);
+    const gridHelper = new THREE.GridHelper(300, 30, 0x94a3b8, 0xe2e8f0);
     gridHelper.position.y = -0.1;
     scene.add(gridHelper);
 
     // 7. Materials
     const metalMaterial = new THREE.MeshStandardMaterial({
-      color: 0x27272a,
+      color: 0xcbd5e1, // Clean titanium gray
       roughness: 0.3,
       metalness: 0.8,
     });
 
     const jointMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1d4ed8, // Deep blue
-      roughness: 0.4,
-      metalness: 0.6,
+      color: 0x3b82f6, // Sleek blue joints
+      roughness: 0.3,
+      metalness: 0.7,
     });
 
-    const needleMaterial = new THREE.MeshBasicMaterial({
-      color: 0x06b6d4, // Cyan glow
+    const needleMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0284c7, // Sky blue steel tool
+      roughness: 0.2,
+      metalness: 0.9,
     });
 
     // Helper to create joint pivots
@@ -246,12 +248,12 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
 
       // Apply rotations to joint groups
       if (jointsRef.current) {
-        jointsRef.current.j1.rotation.y = cur.j1;       // Yaw
-        jointsRef.current.j2.rotation.z = cur.j2;       // Pitch
-        jointsRef.current.j3.rotation.z = cur.j3;       // Pitch
-        jointsRef.current.j4.rotation.y = cur.j4;       // Roll
-        jointsRef.current.j5.rotation.z = cur.j5;       // Pitch
-        jointsRef.current.j6.rotation.y = cur.j6;       // Roll
+        jointsRef.current.j1.rotation.y = cur.j1;       // Yaw (standard)
+        jointsRef.current.j2.rotation.z = -cur.j2;      // Pitch (inverted to match physical forward/backward)
+        jointsRef.current.j3.rotation.z = -cur.j3 - Math.PI / 2; // Pitch + 90 deg offset for physical elbow calibration
+        jointsRef.current.j4.rotation.y = -cur.j4;      // Roll (inverted)
+        jointsRef.current.j5.rotation.z = -cur.j5 - Math.PI / 2; // Pitch + 90 deg offset for physical wrist calibration
+        jointsRef.current.j6.rotation.y = -cur.j6;      // Roll (inverted)
       }
 
       controls.update();
@@ -282,7 +284,7 @@ export default function RobotArmVisualizer({ position }: RobotArmVisualizerProps
   }, []);
 
   return (
-    <div className="relative w-full aspect-video bg-zinc-950 rounded-xl overflow-hidden border border-zinc-200 shadow-md">
+    <div className="relative w-full aspect-video bg-slate-100 rounded-xl overflow-hidden border border-zinc-200 shadow-md">
       {/* 3D Canvas container */}
       <div ref={containerRef} className="w-full h-full" />
 
