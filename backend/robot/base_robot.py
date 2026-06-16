@@ -136,7 +136,12 @@ class BaseRobot(ABC):
         self._tracker_running = False
 
     def stop_locked(self, needle_length=50.0):
-        # Stop the physical motion
+        # Capture the simulated target coordinates before stopping
+        target_x = self.position.get("x", 0.0)
+        target_y = self.position.get("y", 0.0)
+        target_z = self.position.get("z", 0.0)
+
+        # Stop physical motion
         self.stop()
         
         # Stop the tracker loop
@@ -147,53 +152,67 @@ class BaseRobot(ABC):
             self._active_jog_joint = None
             self._active_jog_dir = None
             
-            # Apply post-jog alignment compensation
-            self.apply_post_jog_compensation(
-                self.position["x"] - self._lock_needle_start_pos["x"],
-                self.position["y"] - self._lock_needle_start_pos["y"],
-                self.position["z"] - self._lock_needle_start_pos["z"]
-            )
+            # Apply post-jog alignment compensation using absolute targets
+            self.apply_post_jog_compensation(target_x, target_y, target_z)
 
-    def apply_post_jog_compensation(self, dx, dy, dz):
+    def apply_post_jog_compensation(self, target_x, target_y, target_z):
         comp_thread = threading.Thread(
             target=self._post_jog_comp_loop,
-            args=(dx, dy, dz),
+            args=(target_x, target_y, target_z),
             daemon=True
         )
         comp_thread.start()
 
-    def _post_jog_comp_loop(self, dx, dy, dz):
-        min_interval = getattr(self, "min_motion_interval", 0.2)
-        
+    def _post_jog_comp_loop(self, target_x, target_y, target_z):
         # Compensate X
-        steps_x = int(round(dx))
-        if steps_x != 0:
-            direction = "+" if steps_x > 0 else "-"
-            for _ in range(abs(steps_x)):
-                if getattr(self, "_cancel_move", False):
+        current_x = self.position.get("x", 0.0)
+        dx = target_x - current_x
+        if abs(dx) > 0.1:
+            direction = "+" if dx > 0 else "-"
+            self.jog_cartesian("X", direction)
+            start_time = time.time()
+            while time.time() - start_time < 5.0 and not getattr(self, "_cancel_move", False):
+                cx = self.position.get("x", 0.0)
+                if direction == "+" and cx >= target_x:
                     break
-                self.jog_cartesian("X", direction)
-                time.sleep(min_interval + 0.05)
+                elif direction == "-" and cx <= target_x:
+                    break
+                time.sleep(0.02)
+            self.stop()
+            time.sleep(0.1)
                 
         # Compensate Y
-        steps_y = int(round(dy))
-        if steps_y != 0:
-            direction = "+" if steps_y > 0 else "-"
-            for _ in range(abs(steps_y)):
-                if getattr(self, "_cancel_move", False):
+        current_y = self.position.get("y", 0.0)
+        dy = target_y - current_y
+        if abs(dy) > 0.1:
+            direction = "+" if dy > 0 else "-"
+            self.jog_cartesian("Y", direction)
+            start_time = time.time()
+            while time.time() - start_time < 5.0 and not getattr(self, "_cancel_move", False):
+                cy = self.position.get("y", 0.0)
+                if direction == "+" and cy >= target_y:
                     break
-                self.jog_cartesian("Y", direction)
-                time.sleep(min_interval + 0.05)
+                elif direction == "-" and cy <= target_y:
+                    break
+                time.sleep(0.02)
+            self.stop()
+            time.sleep(0.1)
                 
         # Compensate Z
-        steps_z = int(round(dz))
-        if steps_z != 0:
-            direction = "+" if steps_z > 0 else "-"
-            for _ in range(abs(steps_z)):
-                if getattr(self, "_cancel_move", False):
+        current_z = self.position.get("z", 0.0)
+        dz = target_z - current_z
+        if abs(dz) > 0.1:
+            direction = "+" if dz > 0 else "-"
+            self.jog_cartesian("Z", direction)
+            start_time = time.time()
+            while time.time() - start_time < 5.0 and not getattr(self, "_cancel_move", False):
+                cz = self.position.get("z", 0.0)
+                if direction == "+" and cz >= target_z:
                     break
-                self.jog_cartesian("Z", direction)
-                time.sleep(min_interval + 0.05)
+                elif direction == "-" and cz <= target_z:
+                    break
+                time.sleep(0.02)
+            self.stop()
 
     def move_to_coords(self, target_x, target_y):
         if not hasattr(self, "_cancel_move"):
@@ -223,35 +242,36 @@ class BaseRobot(ABC):
 
     def _move_to_coords_loop(self, target_x, target_y):
         time.sleep(0.01)
-        min_interval = getattr(self, "min_motion_interval", 0.2)
         
         # Move X axis first
-        while not self._cancel_move:
-            feedback = self.read_feedback()
-            if not feedback.get("connected", True):
-                break
-
-            current_x = self.position.get("x", 0.0)
-            dx = target_x - current_x
-            if abs(dx) < 0.1:
-                break
+        current_x = self.position.get("x", 0.0)
+        dx = target_x - current_x
+        if abs(dx) > 0.1 and not self._cancel_move:
             direction = "+" if dx > 0 else "-"
             self.jog_cartesian("X", direction)
-            time.sleep(min_interval + 0.05)
+            start_time = time.time()
+            while time.time() - start_time < 15.0 and not self._cancel_move:
+                cx = self.position.get("x", 0.0)
+                if direction == "+" and cx >= target_x:
+                    break
+                elif direction == "-" and cx <= target_x:
+                    break
+                time.sleep(0.02)
+            self.stop()
+            time.sleep(0.1)
 
         # Move Y axis next
-        while not self._cancel_move:
-            feedback = self.read_feedback()
-            if not feedback.get("connected", True):
-                break
-
-            current_y = self.position.get("y", 0.0)
-            dy = target_y - current_y
-            if abs(dy) < 0.1:
-                break
+        current_y = self.position.get("y", 0.0)
+        dy = target_y - current_y
+        if abs(dy) > 0.1 and not self._cancel_move:
             direction = "+" if dy > 0 else "-"
             self.jog_cartesian("Y", direction)
-            time.sleep(min_interval + 0.05)
-
-        # Stop robot when done
-        self.stop()
+            start_time = time.time()
+            while time.time() - start_time < 15.0 and not self._cancel_move:
+                cy = self.position.get("y", 0.0)
+                if direction == "+" and cy >= target_y:
+                    break
+                elif direction == "-" and cy <= target_y:
+                    break
+                time.sleep(0.02)
+            self.stop()

@@ -178,6 +178,15 @@ class TeensyRobot(BaseRobot):
                 self.last_error = None
                 print(f"[ROBOT] connected successfully on {candidate}")
                 self._last_logged_connected = True
+                
+                # Send a safe Stop (SS) command immediately to trigger the Teensy to output its initial position status
+                try:
+                    self.serial.write(b"SS\n")
+                    self.serial.flush()
+                    print("[ROBOT] Sent initial position query (SS)")
+                except Exception as e:
+                    print(f"[ROBOT] Failed to send initial position query: {e}")
+                
                 return True
             except Exception as exc:
                 msg = str(exc)
