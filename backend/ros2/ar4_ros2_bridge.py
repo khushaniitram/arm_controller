@@ -88,6 +88,7 @@ class AR4Ros2Bridge(Node):
         target_point = msg.points[-1]
         target_positions = target_point.positions # in radians
 
+        any_moving = False
         # Command joints based on target difference
         for i, target_rad in enumerate(target_positions):
             if i >= 6:
@@ -98,9 +99,10 @@ class AR4Ros2Bridge(Node):
 
             # If there's a difference > 0.5 degrees, command a jog step
             if abs(diff) > 0.5:
+                any_moving = True
                 direction = "+" if diff > 0 else "-"
                 cmd = {
-                    "type": "jog_joint",
+                    "command": "joint",
                     "joint": i + 1,
                     "direction": direction
                 }
@@ -109,6 +111,15 @@ class AR4Ros2Bridge(Node):
                     self.ws.send(json.dumps(cmd)),
                     self.loop
                 )
+
+        if not any_moving:
+            cmd = {
+                "command": "stop"
+            }
+            asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps(cmd)),
+                self.loop
+            )
 
 async def receive_websocket(node, ws_url):
     while rclpy.ok():
