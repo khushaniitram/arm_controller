@@ -6,6 +6,7 @@ import ControlPanel from "@/components/ControlPanel";
 import TelemetryPanel from "@/components/TelemetryPanel";
 import StatusIndicators from "@/components/StatusIndicators";
 import Joystick from "@/components/Joystick";
+import RobotArmVisualizer from "@/components/RobotArmVisualizer";
 
 const normalizeBackendHttpUrl = () => {
   let raw = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").trim();
@@ -31,6 +32,7 @@ export default function Home() {
   const [needleLength, setNeedleLength] = useState(50);
   const [targetX, setTargetX] = useState("");
   const [targetY, setTargetY] = useState("");
+  const [activeTab, setActiveTab] = useState<"video" | "twin">("video");
   
   const wsRef = useRef<WebSocket | null>(null);
   const activeKeys = useRef<Set<string>>(new Set());
@@ -227,7 +229,35 @@ export default function Home() {
           
           {/* Main Content: Video & Telemetry */}
           <div className="lg:col-span-8 flex flex-col gap-6">
-            <VideoPlayer streamStatusCallback={setCameraStatus} onStatsUpdate={handleVideoStatsUpdate} />
+            {/* View Tab Selector */}
+            <div className="flex bg-zinc-200/50 p-1 rounded-xl w-fit border border-zinc-300/40">
+              <button 
+                onClick={() => setActiveTab("video")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${
+                  activeTab === "video" 
+                    ? "bg-white text-zinc-950 shadow-sm" 
+                    : "text-zinc-600 hover:text-zinc-900"
+                }`}
+              >
+                📹 360° Live Camera
+              </button>
+              <button 
+                onClick={() => setActiveTab("twin")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${
+                  activeTab === "twin" 
+                    ? "bg-white text-zinc-950 shadow-sm" 
+                    : "text-zinc-600 hover:text-zinc-900"
+                }`}
+              >
+                🤖 3D Digital Twin
+              </button>
+            </div>
+
+            {activeTab === "video" ? (
+              <VideoPlayer streamStatusCallback={setCameraStatus} onStatsUpdate={handleVideoStatsUpdate} />
+            ) : (
+              <RobotArmVisualizer position={position} />
+            )}
             <TelemetryPanel position={position} speed={speed} stats={stats} />
           </div>
 
