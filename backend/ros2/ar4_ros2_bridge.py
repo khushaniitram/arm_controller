@@ -188,6 +188,7 @@ async def receive_websocket(node, ws_url):
 
 async def mock_trajectory_commands(node):
     import time
+    start_time = time.time()
     await asyncio.sleep(5.0)
     while True:
         if node.connected:
@@ -199,12 +200,15 @@ async def mock_trajectory_commands(node):
                 def __init__(self, positions):
                     self.points = [MockPoint(positions)]
             
-            # Target a slight offset
-            offset = 1.0 if (int(time.time()) // 10) % 2 == 0 else -1.0
-            target_positions = [math.radians(deg + offset) for deg in node.current_joints]
+            elapsed = time.time() - start_time
+            # Generate smooth sine wave targets sweeping between -15 and +15 degrees
+            target_positions = [
+                math.radians(15.0 * math.sin(0.15 * elapsed + i * 0.5))
+                for i in range(6)
+            ]
             msg = MockTrajectory(target_positions)
             node.trajectory_callback(msg)
-        await asyncio.sleep(10.0)
+        await asyncio.sleep(2.0)
 
 async def spin_node_async(node):
     while rclpy.ok():
