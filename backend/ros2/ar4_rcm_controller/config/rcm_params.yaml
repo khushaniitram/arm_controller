@@ -1,0 +1,8 @@
+rcm_controller_node:
+  ros__parameters:
+    rcm_x: 0.35
+    rcm_y: 0.0
+    rcm_z: 0.35
+    max_rcm_error: 0.0015
+    control_rate: 100.0
+    kp_rcm: 5.0
