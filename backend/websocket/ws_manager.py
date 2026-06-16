@@ -39,11 +39,21 @@ async def _handle_command(data):
     command = data.get("command")
 
     if command == "joint":
-        robot.jog_joint(int(data["joint"]), data["direction"])
+        joint = int(data["joint"])
+        direction = data["direction"]
+        if data.get("lock_needle") and joint >= 4:
+            needle_len = float(data.get("needle_length", 50.0))
+            robot.jog_joint_locked(joint, direction, needle_len)
+        else:
+            robot.jog_joint(joint, direction)
     elif command == "cartesian":
         robot.jog_cartesian(str(data["axis"]), data["direction"])
     elif command == "stop":
-        robot.stop()
+        if data.get("lock_needle"):
+            needle_len = float(data.get("needle_length", 50.0))
+            robot.stop_locked(needle_len)
+        else:
+            robot.stop()
     elif command == "speed":
         robot.set_speed(int(data["speed"]))
     elif command == "move_to":

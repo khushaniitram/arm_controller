@@ -49,6 +49,9 @@ class SimulatedRobot(BaseRobot):
 
     def stop(self):
         self.cancel_move_to()
+        self._tracker_running = False
+        self._active_jog_joint = None
+        self._active_jog_dir = None
         print(
             "Robot stopped"
         )

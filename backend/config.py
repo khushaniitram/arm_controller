@@ -23,4 +23,13 @@ ROBOT_SERIAL_STARTUP_DELAY = float(os.getenv("ROBOT_SERIAL_STARTUP_DELAY", "2.0"
 ROBOT_RECONNECT_INTERVAL = float(os.getenv("ROBOT_RECONNECT_INTERVAL", "2.0"))
 ROBOT_MIN_MOTION_INTERVAL = float(os.getenv("ROBOT_MIN_MOTION_INTERVAL", "0.2"))
 
+raw_camera_index = os.getenv("CAMERA_INDEX")
+if raw_camera_index is not None:
+    try:
+        CAMERA_INDEX = int(raw_camera_index)
+    except ValueError:
+        CAMERA_INDEX = 0
+else:
+    CAMERA_INDEX = None
+
 ALLOWED_ORIGINS = _read_origins_env()

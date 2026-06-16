@@ -86,6 +86,10 @@ class Offer(BaseModel):
 
 pcs = set()
 
+@app.on_event("startup")
+async def on_startup():
+    robot.start()
+
 @app.on_event("shutdown")
 async def on_shutdown():
     coros = [pc.close() for pc in pcs]

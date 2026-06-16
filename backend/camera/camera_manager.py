@@ -11,6 +11,7 @@ import numpy as np
 from aiortc import VideoStreamTrack
 from aiortc.contrib.media import MediaRelay
 from av import VideoFrame
+from config import CAMERA_INDEX
 
 
 class CameraTrack(VideoStreamTrack):
@@ -55,12 +56,35 @@ class CameraManager:
         if not silent:
             print("\n[2/5] Initializing Camera...")
 
-        available_cameras = []
-        # Quickly probe indices to see which ones are physically present and readable
-        for idx in [0, 1, 2, 3]:
-            cap = cv2.VideoCapture(idx)
+        backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+
+        # If a specific camera index is forced, use it directly
+        if CAMERA_INDEX is not None:
+            cap = cv2.VideoCapture(CAMERA_INDEX, backend)
             if cap.isOpened():
-                # Set properties BEFORE reading any frames (DirectShow requirement)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
+                self.camera = cap
+                print(f"[OK] Camera connected on forced index {CAMERA_INDEX}")
+                self.connected = True
+                return True
+            else:
+                try:
+                    cap.release()
+                except:
+                    pass
+                if not silent:
+                    print(f"[ERR] Failed to open forced camera index {CAMERA_INDEX}")
+                return False
+
+        # Otherwise, run auto-detection probing
+        available_cameras = []
+        for idx in [0, 1, 2, 3]:
+            cap = cv2.VideoCapture(idx, backend)
+            if cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 cap.set(cv2.CAP_PROP_FPS, 30)
@@ -72,7 +96,6 @@ class CameraManager:
                 else:
                     cap.release()
             else:
-                # Release cap if it failed to open
                 try:
                     cap.release()
                 except:

@@ -61,20 +61,24 @@ class TeensyRobot(BaseRobot):
         self._waiting_for_ack = False
         self._last_motion_sent_at = 0.0
 
-        self._connect(force=True)
+        self.thread = None
 
-        self.thread = threading.Thread(target=self._read_loop, daemon=True)
-        self.thread.start()
+    def start(self):
+        if self.thread is None or not self.thread.is_alive():
+            self.running = True
+            self._connect(force=True)
+            self.thread = threading.Thread(target=self._read_loop, daemon=True)
+            self.thread.start()
 
     @staticmethod
     def _list_ports():
         return list(list_ports.comports())
 
     @classmethod
-    def detect_teensy_port(cls):
+    def detect_teensy_ports(cls):
         ports = cls._list_ports()
         if not ports:
-            return None
+            return []
 
         keywords = ("teensy", "usb serial", "ch340", "arduino", "cp210")
         ranked = []
@@ -88,14 +92,11 @@ class TeensyRobot(BaseRobot):
                 ]
             ).lower()
             score = sum(1 for kw in keywords if kw in haystack)
-            ranked.append((score, info))
+            if score > 0:
+                ranked.append((score, info))
 
         ranked.sort(key=lambda item: item[0], reverse=True)
-        best_score, best_port = ranked[0]
-        if best_score > 0:
-            print(f"Auto-detected robot serial port: {best_port.device} ({best_port.description})")
-            return best_port.device
-        return None
+        return [item[1].device for item in ranked]
 
     @classmethod
     def available_ports_text(cls):
@@ -129,9 +130,7 @@ class TeensyRobot(BaseRobot):
             candidates.append(self.preferred_port)
 
         if self.auto_detect:
-            detected = self.detect_teensy_port()
-            if detected:
-                candidates.append(detected)
+            candidates.extend(self.detect_teensy_ports())
 
         # Keep order, remove duplicates.
         unique = []
@@ -165,8 +164,7 @@ class TeensyRobot(BaseRobot):
 
         for candidate in candidates:
             try:
-                if self._last_logged_connected is not False:
-                    print(f"[ROBOT] connecting on {candidate} @ {self.baudrate}...")
+                print(f"[ROBOT] attempting connect on {candidate} @ {self.baudrate}...")
                 self.serial = serial.Serial(
                     candidate,
                     self.baudrate,
@@ -178,7 +176,7 @@ class TeensyRobot(BaseRobot):
                 self.connected_port = candidate
                 self.mode = "Hardware Connected"
                 self.last_error = None
-                print(f"[ROBOT] connected on {candidate}")
+                print(f"[ROBOT] connected successfully on {candidate}")
                 self._last_logged_connected = True
                 return True
             except Exception as exc:
@@ -189,13 +187,9 @@ class TeensyRobot(BaseRobot):
                         "or another backend using this COM port."
                     )
                 self.last_error = msg
-                if self._last_logged_connected is not False:
-                    print(f"[ROBOT] connect failed on {candidate}: {msg}")
+                print(f"[ROBOT] connect failed on {candidate}: {msg}")
                 self._mark_disconnected()
 
-        if self._last_logged_connected is not False:
-            print("[ROBOT] reconnect failed.")
-            self._last_logged_connected = False
         return False
 
     def _ensure_connected(self):
@@ -300,6 +294,9 @@ class TeensyRobot(BaseRobot):
 
     def stop(self):
         self.cancel_move_to()
+        self._tracker_running = False
+        self._active_jog_joint = None
+        self._active_jog_dir = None
         self._send_command("SS")
 
     def set_speed(self, speed):

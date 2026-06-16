@@ -39,7 +39,7 @@ export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed
           <div className="grid grid-cols-2 gap-2">
             {joints.map(j => {
               const isWrist = j >= 4;
-              const disabled = isWrist && lockNeedle;
+              const isCompensated = isWrist && lockNeedle;
               return (
                 <div key={j} className="flex gap-1">
                   <button 
@@ -47,28 +47,18 @@ export default function ControlPanel({ onJogJoint, onJogCartesian, onStop, speed
                     onPointerUp={onStop}
                     onPointerLeave={onStop}
                     onPointerCancel={onStop}
-                    disabled={disabled}
-                    className={`flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer ${
-                      disabled 
-                        ? "bg-zinc-50 border-zinc-100 text-zinc-400 cursor-not-allowed opacity-60"
-                        : "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
-                    }`}
+                    className="flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
                   >
-                    {disabled ? "🔒" : ""} J{j}-
+                    {isCompensated ? "🔗 " : ""} J{j}-
                   </button>
                   <button 
                     onPointerDown={() => onJogJoint(j, "+")}
                     onPointerUp={onStop}
                     onPointerLeave={onStop}
                     onPointerCancel={onStop}
-                    disabled={disabled}
-                    className={`flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer ${
-                      disabled 
-                        ? "bg-zinc-50 border-zinc-100 text-zinc-400 cursor-not-allowed opacity-60"
-                        : "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
-                    }`}
+                    className="flex-1 px-2 py-3 rounded text-sm font-semibold select-none touch-none transition-all border shadow-xs cursor-pointer bg-zinc-100 hover:bg-zinc-200 text-zinc-900 active:bg-zinc-950 active:text-white border-zinc-200/60"
                   >
-                    {disabled ? "🔒" : ""} J{j}+
+                    {isCompensated ? "🔗 " : ""} J{j}+
                   </button>
                 </div>
               );

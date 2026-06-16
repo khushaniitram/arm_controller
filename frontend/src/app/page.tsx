@@ -28,6 +28,7 @@ export default function Home() {
   const [speed, setSpeed] = useState(25);
   const [stats, setStats] = useState({ fps: 0, latency: 0, controlLatency: 0 });
   const [lockNeedle, setLockNeedle] = useState(false);
+  const [needleLength, setNeedleLength] = useState(50);
   const [targetX, setTargetX] = useState("");
   const [targetY, setTargetY] = useState("");
   
@@ -107,10 +108,10 @@ export default function Home() {
 
   const stopRobot = useCallback(() => {
     if (activeMotionRef.current !== null) {
-      sendCommand({ command: "stop" });
+      sendCommand({ command: "stop", lock_needle: lockNeedle, needle_length: needleLength });
       activeMotionRef.current = null;
     }
-  }, [sendCommand]);
+  }, [sendCommand, lockNeedle, needleLength]);
 
   const emergencyStop = useCallback(() => {
     sendCommand({ command: "stop" });
@@ -132,9 +133,9 @@ export default function Home() {
 
   const startJogJoint = useCallback((joint: number, direction: string) => {
     const motionKey = `joint:${joint}:${direction}`;
-    const cmd = { command: "joint", joint, direction };
+    const cmd = { command: "joint", joint, direction, lock_needle: lockNeedle, needle_length: needleLength };
     startContinuousCommand(motionKey, cmd);
-  }, [startContinuousCommand]);
+  }, [startContinuousCommand, lockNeedle, needleLength]);
 
   const startJogCartesian = useCallback((axis: string, direction: string) => {
     const motionKey = `cartesian:${axis}:${direction}`;
@@ -267,6 +268,22 @@ export default function Home() {
               >
                 {lockNeedle ? "🔒 Needle Direction Locked" : "🔓 Lock Needle Direction"}
               </button>
+
+              {/* Needle Length Configuration Slider */}
+              <div className="flex flex-col gap-1.5 mt-2 bg-zinc-50 border border-zinc-200 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-semibold text-zinc-500">Needle Offset Length</label>
+                  <span className="font-mono text-xs text-zinc-800 font-bold bg-zinc-200/60 px-1.5 py-0.5 rounded">{needleLength} units</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="150"
+                  value={needleLength}
+                  onChange={(e) => setNeedleLength(parseInt(e.target.value))}
+                  className="w-full accent-zinc-900 h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
 
               {/* Coordinate Fields */}
               <div className={`transition-all duration-300 overflow-hidden ${lockNeedle ? "max-h-60 opacity-100 mt-1" : "max-h-0 opacity-0 pointer-events-none"}`}>
